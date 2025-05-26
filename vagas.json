@@ -1,0 +1,37 @@
+{
+  "MOTORISTA_DE_DISTRIBUICAO": {
+    "titulo": "Motorista de Distribuição",
+    "requisitos": [
+      "CNH categoria C, D, E ou superior, válida.",
+      "Transporte de cargas (EAR).",
+      "Possuir experiência como motorista profissional.",
+      "Experiência em dirigir em rodovias.",
+      "Apto a realizar esforço físico diário (carga e descarga).",
+      "Ensino fundamental completo (mínimo).",
+      "Disponibilidade para viagens curtas e jornadas flexíveis."
+    ],
+    "diferenciais": [
+      "Experiência prévia no segmento de bebidas ou logística.",
+      "Curso de direção defensiva.",
+      "Facilidade de comunicação e bom relacionamento interpessoal."
+    ],
+    "observacoes": [
+      "Provas junto com o questionário para uma score geral.",
+      "Após a validação do teste e aprovação, enviar prova para o candidato."
+    ]
+  },
+  "AUXILIAR_DE_DISTRIBUICAO": {
+    "titulo": "Auxiliar de Distribuição",
+    "requisitos": [
+      "Ensino fundamental completo.",
+      "Boa disposição física.",
+      "Facilidade para trabalho em equipe.",
+      "Disponibilidade de horário."
+    ],
+    "diferenciais": [
+      "Experiência anterior na função ou em logística.",
+      "Facilidade de comunicação e proatividade.",
+      "Conhecimento das rotas locais."
+    ]
+  }
+} 
