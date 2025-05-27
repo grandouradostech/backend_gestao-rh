@@ -46,8 +46,10 @@ async function processarAnexos(response) {
 
 // Rota para receber webhook do Typeform
 app.post('/typeform-webhook', async (req, res) => {
+  console.log('BODY:', JSON.stringify(req.body));
   try {
-    const response = req.body.form_response;
+    // Aceita tanto com wrapper form_response quanto direto
+    const response = req.body.form_response || req.body;
     // Upload currículo
     const caminhoCurriculo = await processarAnexos(response);
     // Estruturar dados
