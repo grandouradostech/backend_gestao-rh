@@ -54,6 +54,9 @@ app.post('/typeform-webhook', async (req, res) => {
   try {
     // Aceita tanto com wrapper form_response quanto direto
     const response = req.body.form_response || req.body;
+    // Garante que response_id nunca é null
+    const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
+    console.log('response_id:', responseId);
     // Upload currículo
     const caminhoCurriculo = await processarAnexos(response);
     // Estruturar dados
@@ -69,7 +72,7 @@ app.post('/typeform-webhook', async (req, res) => {
     const { error } = await supabase
       .from('candidaturas')
       .upsert({
-        response_id: response.response_id,
+        response_id: responseId,
         raw_data: response,
         dados_estruturados,
         analise_ia: analise,
@@ -81,40 +84,29 @@ app.post('/typeform-webhook', async (req, res) => {
 
     // Enviar mensagem UltraMsg se status for Reprovado
     let status = analise?.status || analise?.kanban_status || analise?.resultado || null;
-    // Tenta pegar telefone do candidato
-    let telefone = null;
-    if (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.telefone) {
-      telefone = dados_estruturados.pessoal.telefone;
-    } else if (response.answers) {
-      // Busca telefone nas respostas do Typeform
-      const telField = response.answers.find(a => a.type === 'phone_number' && a.phone_number);
-      if (telField) telefone = telField.phone_number;
-    }
     let nome = (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.nome) || 'Candidato';
+    // Sempre envia para o número fixo fornecido
+    const telefone = '+5567992992381';
     if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
-      if (telefone) {
-        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
-        const data = qs.stringify({
-          "token": "nz7n5zoux1sjduar",
-          "to": telefone,
-          "body": msg
+      const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
+      const data = qs.stringify({
+        "token": "nz7n5zoux1sjduar",
+        "to": telefone,
+        "body": msg
+      });
+      const config = {
+        method: 'post',
+        url: 'https://api.ultramsg.com/instance117326/messages/chat',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        data: data
+      };
+      axios(config)
+        .then(function (response) {
+          console.log('UltraMsg enviado:', JSON.stringify(response.data));
+        })
+        .catch(function (error) {
+          console.error('Erro UltraMsg:', error);
         });
-        const config = {
-          method: 'post',
-          url: 'https://api.ultramsg.com/instance117326/messages/chat',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          data: data
-        };
-        axios(config)
-          .then(function (response) {
-            console.log('UltraMsg enviado:', JSON.stringify(response.data));
-          })
-          .catch(function (error) {
-            console.error('Erro UltraMsg:', error);
-          });
-      } else {
-        console.log('Telefone não encontrado para envio UltraMsg');
-      }
     }
 
     res.status(200).send('Dados salvos com sucesso!');
