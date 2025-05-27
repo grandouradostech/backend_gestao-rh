@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const supabase = require('./supabaseClient');
 const { analisarCandidatura, estruturarDados } = require('./services/openai-analise');
 const fetch = require('node-fetch');
@@ -7,6 +8,7 @@ const axios = require('axios');
 const qs = require('qs');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 async function processarAnexos(response) {
