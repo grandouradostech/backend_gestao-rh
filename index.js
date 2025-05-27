@@ -122,6 +122,67 @@ app.post('/typeform-webhook', async (req, res) => {
   }
 });
 
+// Endpoint PATCH para atualizar status e enviar UltraMsg se reprovado
+app.patch('/candidaturas/:response_id/status', async (req, res) => {
+  const { response_id } = req.params;
+  const { status } = req.body;
+  try {
+    // Atualiza status no Supabase
+    const { data, error } = await supabase
+      .from('candidaturas')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('response_id', response_id)
+      .select();
+    if (error || !data || !data[0]) {
+      console.error('Erro ao atualizar status:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar status' });
+    }
+    const candidato = data[0];
+    // Busca nome e telefone
+    let nome = 'Candidato';
+    let telefone = null;
+    if (candidato.dados_estruturados && candidato.dados_estruturados.pessoal) {
+      nome = candidato.dados_estruturados.pessoal.nome || nome;
+      telefone = candidato.dados_estruturados.pessoal.telefone || null;
+    }
+    // Se reprovado, envia UltraMsg
+    if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
+      if (telefone) {
+        // Normaliza telefone
+        telefone = telefone.replace(/[^\d+]/g, '');
+        if (!telefone.startsWith('+')) {
+          telefone = '+55' + telefone;
+        }
+        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
+        const dataMsg = qs.stringify({
+          "token": "nz7n5zoux1sjduar",
+          "to": telefone,
+          "body": msg
+        });
+        const config = {
+          method: 'post',
+          url: 'https://api.ultramsg.com/instance117326/messages/chat',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: dataMsg
+        };
+        axios(config)
+          .then(function (response) {
+            console.log('UltraMsg enviado:', JSON.stringify(response.data));
+          })
+          .catch(function (error) {
+            console.error('Erro UltraMsg:', error);
+          });
+      } else {
+        console.log('Telefone não encontrado para envio UltraMsg');
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Erro PATCH status:', err);
+    res.status(500).json({ error: 'Erro ao atualizar status' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
