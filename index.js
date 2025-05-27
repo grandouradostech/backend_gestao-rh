@@ -6,6 +6,9 @@ const { analisarCandidatura, estruturarDados } = require('./services/openai-anal
 const fetch = require('node-fetch');
 const axios = require('axios');
 const qs = require('qs');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const SECRET = process.env.JWT_SECRET || 'supersecret';
 
 const app = express();
 app.use(cors());
@@ -48,6 +51,26 @@ async function processarAnexos(response) {
   }
 }
 
+// Middleware para autenticação
+function auth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Token não enviado' });
+  const token = authHeader.split(' ')[1];
+  try {
+    const user = jwt.verify(token, SECRET);
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+}
+
+// Middleware para gestor
+function onlyGestor(req, res, next) {
+  if (req.user?.role !== 'gestor') return res.status(403).json({ error: 'Apenas gestor pode realizar esta ação' });
+  next();
+}
+
 // Rota para receber webhook do Typeform
 app.post('/typeform-webhook', async (req, res) => {
   console.log('BODY:', JSON.stringify(req.body));
@@ -78,7 +101,8 @@ app.post('/typeform-webhook', async (req, res) => {
         analise_ia: analise,
         curriculo_path: caminhoCurriculo,
         tem_curriculo: !!caminhoCurriculo,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        status: response.status || 'Analisado por IA'
       }, { onConflict: 'response_id' });
     if (error) throw error;
 
@@ -175,6 +199,35 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     console.error('Erro PATCH status:', err);
     res.status(500).json({ error: 'Erro ao atualizar status' });
   }
+});
+
+// Login
+app.post('/login', async (req, res) => {
+  const { email, senha } = req.body;
+  if (!email || !senha) return res.status(400).json({ error: 'Email e senha obrigatórios' });
+  const { data: users, error } = await supabase.from('usuarios_rh').select('*').eq('email', email).limit(1);
+  if (error || !users || users.length === 0) return res.status(401).json({ error: 'Usuário não encontrado' });
+  const user = users[0];
+  const ok = await bcrypt.compare(senha, user.senha);
+  if (!ok) return res.status(401).json({ error: 'Senha inválida' });
+  const token = jwt.sign({ id: user.id, nome: user.nome, email: user.email, role: user.role, imagem_url: user.imagem_url }, SECRET, { expiresIn: '12h' });
+  res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role, imagem_url: user.imagem_url } });
+});
+
+// Dados do usuário autenticado
+app.get('/me', auth, async (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Criar novo usuário (apenas gestor)
+app.post('/usuarios', auth, onlyGestor, async (req, res) => {
+  const { nome, email, senha, role, imagem_url } = req.body;
+  if (!nome || !email || !senha || !role) return res.status(400).json({ error: 'Campos obrigatórios' });
+  if (!['gestor', 'convidado'].includes(role)) return res.status(400).json({ error: 'Role inválido' });
+  const hash = await bcrypt.hash(senha, 10);
+  const { data, error } = await supabase.from('usuarios_rh').insert([{ nome, email, senha: hash, role, imagem_url }]);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;

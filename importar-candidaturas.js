@@ -131,7 +131,8 @@ async function main() {
             analise_ia: analise,
             curriculo_path: caminhoCurriculo,
             tem_curriculo: !!caminhoCurriculo,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            status: response.status || 'Analisado por IA'
           }, { onConflict: 'response_id' });
 
         if (error) throw error;
