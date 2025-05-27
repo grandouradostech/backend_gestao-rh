@@ -3,6 +3,8 @@ const express = require('express');
 const supabase = require('./supabaseClient');
 const { analisarCandidatura, estruturarDados } = require('./services/openai-analise');
 const fetch = require('node-fetch');
+const axios = require('axios');
+const qs = require('qs');
 
 const app = express();
 app.use(express.json());
@@ -74,6 +76,45 @@ app.post('/typeform-webhook', async (req, res) => {
         updated_at: new Date().toISOString()
       }, { onConflict: 'response_id' });
     if (error) throw error;
+
+    // Enviar mensagem UltraMsg se status for Reprovado
+    let status = analise?.status || analise?.kanban_status || analise?.resultado || null;
+    // Tenta pegar telefone do candidato
+    let telefone = null;
+    if (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.telefone) {
+      telefone = dados_estruturados.pessoal.telefone;
+    } else if (response.answers) {
+      // Busca telefone nas respostas do Typeform
+      const telField = response.answers.find(a => a.type === 'phone_number' && a.phone_number);
+      if (telField) telefone = telField.phone_number;
+    }
+    let nome = (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.nome) || 'Candidato';
+    if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
+      if (telefone) {
+        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
+        const data = qs.stringify({
+          "token": "nz7n5zoux1sjduar",
+          "to": telefone,
+          "body": msg
+        });
+        const config = {
+          method: 'post',
+          url: 'https://api.ultramsg.com/instance117326/messages/chat',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: data
+        };
+        axios(config)
+          .then(function (response) {
+            console.log('UltraMsg enviado:', JSON.stringify(response.data));
+          })
+          .catch(function (error) {
+            console.error('Erro UltraMsg:', error);
+          });
+      } else {
+        console.log('Telefone não encontrado para envio UltraMsg');
+      }
+    }
+
     res.status(200).send('Dados salvos com sucesso!');
   } catch (err) {
     console.error('Erro:', err);
