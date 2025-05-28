@@ -145,12 +145,16 @@ app.post('/typeform-webhook', async (req, res) => {
 // Endpoint PATCH para atualizar status e enviar UltraMsg se reprovado
 app.patch('/candidaturas/:response_id/status', async (req, res) => {
   const { response_id } = req.params;
-  const { status } = req.body;
+  const { status, assumido_por, assumido_por_nome } = req.body;
   try {
-    // Atualiza status no Supabase
+    // Monta objeto de update
+    const updateObj = { status, updated_at: new Date().toISOString() };
+    if (assumido_por) updateObj.assumido_por = assumido_por;
+    if (assumido_por_nome) updateObj.assumido_por_nome = assumido_por_nome;
+    // Atualiza status e quem assumiu no Supabase
     const { data, error } = await supabase
       .from('candidaturas')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updateObj)
       .eq('response_id', response_id)
       .select();
     if (error || !data || !data[0]) {
