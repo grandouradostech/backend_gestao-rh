@@ -266,6 +266,25 @@ app.get('/vagas', (req, res) => {
   });
 });
 
+// Endpoint para remover candidato
+app.delete('/candidaturas/:response_id', async (req, res) => {
+  const { response_id } = req.params;
+  try {
+    const { error } = await supabase
+      .from('candidaturas')
+      .delete()
+      .eq('response_id', response_id);
+    if (error) {
+      console.error('Erro ao deletar candidato:', error);
+      return res.status(500).json({ error: 'Erro ao deletar candidato' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao deletar candidato:', err);
+    res.status(500).json({ error: 'Erro ao deletar candidato' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
