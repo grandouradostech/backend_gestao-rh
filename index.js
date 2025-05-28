@@ -9,6 +9,8 @@ const qs = require('qs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const SECRET = process.env.JWT_SECRET || 'supersecret';
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -228,6 +230,22 @@ app.post('/usuarios', auth, onlyGestor, async (req, res) => {
   const { data, error } = await supabase.from('usuarios_rh').insert([{ nome, email, senha: hash, role, imagem_url }]);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// Endpoint para listar vagas com data de abertura
+app.get('/vagas', (req, res) => {
+  const vagasPath = path.join(__dirname, 'vagas.json');
+  fs.readFile(vagasPath, 'utf8', (err, data) => {
+    if (err) {
+      return res.status(500).json({ error: 'Erro ao ler vagas.json' });
+    }
+    try {
+      const vagas = JSON.parse(data);
+      res.json(vagas);
+    } catch (e) {
+      res.status(500).json({ error: 'Erro ao parsear vagas.json' });
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;

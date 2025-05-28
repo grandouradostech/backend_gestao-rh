@@ -1,6 +1,7 @@
 {
   "MOTORISTA_DE_DISTRIBUICAO": {
     "titulo": "Motorista de Distribuição",
+    "data_abertura": "2025-05-15",
     "requisitos": [
       "CNH categoria C, D, E ou superior, válida.",
       "Transporte de cargas (EAR).",
@@ -22,6 +23,7 @@
   },
   "AUXILIAR_DE_DISTRIBUICAO": {
     "titulo": "Auxiliar de Distribuição",
+    "data_abertura": "2025-05-15",
     "requisitos": [
       "Ensino fundamental completo.",
       "Boa disposição física.",
