@@ -147,10 +147,24 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
   const { response_id } = req.params;
   const { status, assumido_por, assumido_por_nome } = req.body;
   try {
+    // Busca o candidato atual para ver se já tem assumido_em
+    const { data: candidatoAtual, error: errorBusca } = await supabase
+      .from('candidaturas')
+      .select('assumido_em')
+      .eq('response_id', response_id)
+      .single();
+    if (errorBusca) {
+      console.error('Erro ao buscar candidato:', errorBusca);
+      return res.status(500).json({ error: 'Erro ao buscar candidato' });
+    }
     // Monta objeto de update
     const updateObj = { status, updated_at: new Date().toISOString() };
     if (assumido_por) updateObj.assumido_por = assumido_por;
     if (assumido_por_nome) updateObj.assumido_por_nome = assumido_por_nome;
+    // Só preenche assumido_em se ainda não existe
+    if (!candidatoAtual.assumido_em && assumido_por) {
+      updateObj.assumido_em = new Date().toISOString();
+    }
     // Atualiza status e quem assumiu no Supabase
     const { data, error } = await supabase
       .from('candidaturas')
