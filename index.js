@@ -147,10 +147,10 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
   const { response_id } = req.params;
   const { status, assumido_por, assumido_por_nome } = req.body;
   try {
-    // Busca o candidato atual para ver se já tem assumido_em
+    // Busca o candidato atual para ver se já tem assumido_em e status_history
     const { data: candidatoAtual, error: errorBusca } = await supabase
       .from('candidaturas')
-      .select('assumido_em')
+      .select('assumido_em, status_history')
       .eq('response_id', response_id)
       .single();
     if (errorBusca) {
@@ -161,10 +161,16 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     const updateObj = { status, updated_at: new Date().toISOString() };
     if (assumido_por) updateObj.assumido_por = assumido_por;
     if (assumido_por_nome) updateObj.assumido_por_nome = assumido_por_nome;
-    // Só preenche assumido_em se ainda não existe
     if (!candidatoAtual.assumido_em && assumido_por) {
       updateObj.assumido_em = new Date().toISOString();
     }
+    // Atualiza status_history
+    const agora = new Date().toISOString();
+    let novoHistorico = Array.isArray(candidatoAtual.status_history) ? [...candidatoAtual.status_history] : [];
+    if (!novoHistorico.length || novoHistorico[novoHistorico.length - 1].status !== status) {
+      novoHistorico.push({ status, data: agora });
+    }
+    updateObj.status_history = novoHistorico;
     // Atualiza status e quem assumiu no Supabase
     const { data, error } = await supabase
       .from('candidaturas')
