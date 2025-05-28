@@ -285,6 +285,37 @@ app.delete('/candidaturas/:response_id', async (req, res) => {
   }
 });
 
+// Endpoint para atualizar manualmente a vaga do candidato
+app.patch('/candidaturas/:response_id/vaga', async (req, res) => {
+  const { response_id } = req.params;
+  const { nova_vaga } = req.body;
+  try {
+    // Busca o candidato atual
+    const { data: candidatoAtual, error: errorBusca } = await supabase
+      .from('candidaturas')
+      .select('dados_estruturados')
+      .eq('response_id', response_id)
+      .single();
+    if (errorBusca || !candidatoAtual) {
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+    // Atualiza o campo de vaga
+    const dados = candidatoAtual.dados_estruturados || {};
+    if (!dados.profissional) dados.profissional = {};
+    dados.profissional.vaga = nova_vaga;
+    const { error } = await supabase
+      .from('candidaturas')
+      .update({ dados_estruturados: dados, updated_at: new Date().toISOString() })
+      .eq('response_id', response_id);
+    if (error) {
+      return res.status(500).json({ error: 'Erro ao atualizar vaga' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar vaga' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
