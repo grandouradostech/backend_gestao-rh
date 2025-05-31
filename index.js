@@ -93,6 +93,27 @@ app.post('/typeform-webhook', async (req, res) => {
     }
     // Analisar candidatura
     const analise = await analisarCandidatura(response, caminhoCurriculo);
+    // Extrair nome do candidato
+    function nomeValido(nome) {
+      if (!nome) return false;
+      if (/^\d{11}$/.test(nome)) return false;
+      if (/^\d{10,}$/.test(nome)) return false;
+      if (nome.toLowerCase() === 'texto') return false;
+      if (nome.length < 2) return false;
+      return true;
+    }
+    let nome = dados_estruturados?.pessoal?.nome || '';
+    if (!nomeValido(nome)) {
+      // Busca nos campos do Typeform
+      let nomeTypeform = null;
+      if (Array.isArray(response.answers)) {
+        const nomeAnswer = response.answers.find(ans => ans.field && (ans.field.id === 'oq4YGUe70Wk6' || ans.field.id === '6VkDMDJph5Jc'));
+        if (nomeAnswer && nomeAnswer.text) {
+          nomeTypeform = nomeAnswer.text;
+        }
+      }
+      nome = nomeValido(nomeTypeform) ? nomeTypeform : 'Não identificado';
+    }
     // Salvar no Supabase
     const { error } = await supabase
       .from('candidaturas')
@@ -104,15 +125,14 @@ app.post('/typeform-webhook', async (req, res) => {
         curriculo_path: caminhoCurriculo,
         tem_curriculo: !!caminhoCurriculo,
         updated_at: new Date().toISOString(),
-        status: response.status || 'Analisado por IA'
+        status: response.status || 'Analisado por IA',
+        nome
       }, { onConflict: 'response_id' });
     if (error) throw error;
 
     // Enviar mensagem UltraMsg se status for Reprovado
     let status = analise?.status || analise?.kanban_status || analise?.resultado || null;
-    let nome = (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.nome) || 'Candidato';
-    // Sempre envia para o número fixo fornecido
-    const telefone = '+5567992992381';
+    let telefone = (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.telefone) || null;
     if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
       const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
       const data = qs.stringify({

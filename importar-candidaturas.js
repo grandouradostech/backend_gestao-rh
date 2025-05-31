@@ -121,6 +121,28 @@ async function main() {
         // Analisar candidatura
         const analise = await analisarCandidatura(response, caminhoCurriculo);
 
+        // Extrair nome do candidato
+        function nomeValido(nome) {
+          if (!nome) return false;
+          if (/^\d{11}$/.test(nome)) return false;
+          if (/^\d{10,}$/.test(nome)) return false;
+          if (nome.toLowerCase() === 'texto') return false;
+          if (nome.length < 2) return false;
+          return true;
+        }
+        let nome = dados_estruturados?.pessoal?.nome || '';
+        if (!nomeValido(nome)) {
+          // Busca nos campos do Typeform
+          let nomeTypeform = null;
+          if (Array.isArray(response.answers)) {
+            const nomeAnswer = response.answers.find(ans => ans.field && (ans.field.id === 'oq4YGUe70Wk6' || ans.field.id === '6VkDMDJph5Jc'));
+            if (nomeAnswer && nomeAnswer.text) {
+              nomeTypeform = nomeAnswer.text;
+            }
+          }
+          nome = nomeValido(nomeTypeform) ? nomeTypeform : 'Não identificado';
+        }
+
         // Salvar no banco
         const { error } = await supabase
           .from('candidaturas')
@@ -132,7 +154,8 @@ async function main() {
             curriculo_path: caminhoCurriculo,
             tem_curriculo: !!caminhoCurriculo,
             updated_at: new Date().toISOString(),
-            status: response.status || 'Analisado por IA'
+            status: response.status || 'Analisado por IA',
+            nome
           }, { onConflict: 'response_id' });
 
         if (error) throw error;
