@@ -157,28 +157,30 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       console.error('Erro ao buscar candidato:', errorBusca);
       return res.status(500).json({ error: 'Erro ao buscar candidato' });
     }
-    // Mapeamento de status para campos de fase
+    // Mapeamento de status para campos de fase (case-insensitive)
     const faseCampos = {
-      'Analisado por IA': 'fase_analisado',
-      'Provas': 'fase_provas',
-      'Aprovado': 'fase_aprovados',
-      'Entrevista': 'fase_entrevista',
+      'analisado por ia': 'fase_analisado',
+      'provas': 'fase_provas',
+      'aprovado': 'fase_aprovados',
+      'entrevista': 'fase_entrevista',
     };
+    const statusKey = (status || '').toLowerCase().trim();
     // Descobre a fase anterior (último status diferente do novo)
     let faseAnterior = null;
     let faseAnteriorCampo = null;
     if (Array.isArray(candidatoAtual.status_history) && candidatoAtual.status_history.length > 0) {
       for (let i = candidatoAtual.status_history.length - 1; i >= 0; i--) {
         const prev = candidatoAtual.status_history[i];
-        if (prev.status !== status && faseCampos[prev.status]) {
+        const prevKey = (prev.status || '').toLowerCase().trim();
+        if (prevKey !== statusKey && faseCampos[prevKey]) {
           faseAnterior = prev.status;
-          faseAnteriorCampo = faseCampos[prev.status];
+          faseAnteriorCampo = faseCampos[prevKey];
           break;
         }
       }
     }
     // Fase atual (nova)
-    const faseAtualCampo = faseCampos[status];
+    const faseAtualCampo = faseCampos[statusKey];
     // Monta objeto de update
     const updateObj = { status, updated_at: new Date().toISOString() };
     if (assumido_por) updateObj.assumido_por = assumido_por;
