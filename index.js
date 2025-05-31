@@ -150,13 +150,35 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     // Busca o candidato atual para ver se já tem assumido_em e status_history
     const { data: candidatoAtual, error: errorBusca } = await supabase
       .from('candidaturas')
-      .select('assumido_em, status_history')
+      .select('*')
       .eq('response_id', response_id)
       .single();
     if (errorBusca) {
       console.error('Erro ao buscar candidato:', errorBusca);
       return res.status(500).json({ error: 'Erro ao buscar candidato' });
     }
+    // Mapeamento de status para campos de fase
+    const faseCampos = {
+      'Analisado por IA': 'fase_analisado',
+      'Provas': 'fase_provas',
+      'Aprovado': 'fase_aprovados',
+      'Entrevista': 'fase_entrevista',
+    };
+    // Descobre a fase anterior (último status diferente do novo)
+    let faseAnterior = null;
+    let faseAnteriorCampo = null;
+    if (Array.isArray(candidatoAtual.status_history) && candidatoAtual.status_history.length > 0) {
+      for (let i = candidatoAtual.status_history.length - 1; i >= 0; i--) {
+        const prev = candidatoAtual.status_history[i];
+        if (prev.status !== status && faseCampos[prev.status]) {
+          faseAnterior = prev.status;
+          faseAnteriorCampo = faseCampos[prev.status];
+          break;
+        }
+      }
+    }
+    // Fase atual (nova)
+    const faseAtualCampo = faseCampos[status];
     // Monta objeto de update
     const updateObj = { status, updated_at: new Date().toISOString() };
     if (assumido_por) updateObj.assumido_por = assumido_por;
@@ -171,6 +193,14 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       novoHistorico.push({ status, data: agora });
     }
     updateObj.status_history = novoHistorico;
+    // Atualiza início da nova fase
+    if (faseAtualCampo && !candidatoAtual[`${faseAtualCampo}_inicio`]) {
+      updateObj[`${faseAtualCampo}_inicio`] = agora;
+    }
+    // Atualiza fim da fase anterior
+    if (faseAnteriorCampo && !candidatoAtual[`${faseAnteriorCampo}_fim`]) {
+      updateObj[`${faseAnteriorCampo}_fim`] = agora;
+    }
     // Atualiza status e quem assumiu no Supabase
     const { data, error } = await supabase
       .from('candidaturas')
