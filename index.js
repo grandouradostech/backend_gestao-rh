@@ -223,6 +223,13 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     if (faseAnteriorCampo && !candidatoAtual[`${faseAnteriorCampo}_fim`]) {
       updateObj[`${faseAnteriorCampo}_fim`] = agora;
     }
+    // Preencher contratado_em ou reprovado_em ao entrar nesses status
+    if (statusKey === 'contratado' && !candidatoAtual.contratado_em) {
+      updateObj.contratado_em = agora;
+    }
+    if (statusKey === 'reprovado' && !candidatoAtual.reprovado_em) {
+      updateObj.reprovado_em = agora;
+    }
     // Atualiza status e quem assumiu no Supabase
     const { data, error } = await supabase
       .from('candidaturas')
