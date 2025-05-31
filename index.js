@@ -472,6 +472,131 @@ app.get('/vagas/:vaga_id/tempo-medio-fases', async (req, res) => {
   }
 });
 
+// Endpoint para receber webhook das provas do Typeform
+app.post('/webhook-prova', async (req, res) => {
+  try {
+    const response = req.body.form_response || req.body;
+    // Extrair possíveis identificadores do Typeform
+    let email = null, cpf = null, telefone = null, nome = null, responseId = null, criterioUsado = null;
+    if (Array.isArray(response.answers)) {
+      for (const ans of response.answers) {
+        // E-mail
+        if (ans.email) email = ans.email;
+        if (ans.text && /^[\w.-]+@[\w.-]+\.[A-Za-z]{2,}$/.test(ans.text)) email = ans.text;
+        // CPF (11 dígitos)
+        if (ans.text && /^\d{11}$/.test(ans.text.replace(/\D/g, ''))) cpf = ans.text.replace(/\D/g, '');
+        // Telefone (>=10 dígitos)
+        if (ans.phone_number) telefone = ans.phone_number.replace(/\D/g, '');
+        if (ans.text && /^\d{10,}$/.test(ans.text.replace(/\D/g, ''))) telefone = ans.text.replace(/\D/g, '');
+        // Nome (duas palavras, cada uma com pelo menos 2 letras)
+        if (ans.text && /[A-Za-zÀ-ÿ]{2,}\s+[A-Za-zÀ-ÿ]{2,}/.test(ans.text)) nome = ans.text.trim();
+      }
+    }
+    responseId = response.response_id || response.token;
+    console.log('[WEBHOOK DEBUG] Extraído:', { email, cpf, telefone, nome, responseId });
+    // 1. Tenta por e-mail
+    let { data: candidato } = await supabase
+      .from('candidaturas')
+      .select('*')
+      .eq('email', email)
+      .single();
+    if (candidato) criterioUsado = 'email';
+    // 2. Se não achou, tenta por CPF
+    if (!candidato && cpf) {
+      const { data } = await supabase
+        .from('candidaturas')
+        .select('*')
+        .eq('cpf', cpf)
+        .single();
+      candidato = data;
+      if (candidato) criterioUsado = 'cpf';
+    }
+    // 3. Se não achou, tenta por telefone
+    if (!candidato && telefone) {
+      const { data } = await supabase
+        .from('candidaturas')
+        .select('*')
+        .eq('telefone', telefone)
+        .single();
+      candidato = data;
+      if (candidato) criterioUsado = 'telefone';
+    }
+    // 4. Se não achou, tenta por response_id
+    if (!candidato && responseId) {
+      const { data } = await supabase
+        .from('candidaturas')
+        .select('*')
+        .eq('response_id', responseId)
+        .single();
+      candidato = data;
+      if (candidato) criterioUsado = 'response_id';
+    }
+    // 5. Se não achou, tenta por nome (atenção: pode dar falso positivo)
+    if (!candidato && nome) {
+      const { data } = await supabase
+        .from('candidaturas')
+        .select('*')
+        .ilike('nome', `%${nome}%`)
+        .single();
+      candidato = data;
+      if (candidato) criterioUsado = 'nome';
+    }
+    if (!candidato) {
+      console.log('[WEBHOOK DEBUG] Nenhum candidato encontrado por nenhum critério!');
+      return res.status(404).json({ error: 'Candidato não encontrado por nenhum identificador' });
+    }
+    console.log(`[WEBHOOK DEBUG] Candidato encontrado! id: ${candidato.id}, critério: ${criterioUsado}`);
+    // Montar prompt para IA
+    const respostas = (response.answers || []).map(ans => {
+      if (ans.text) return ans.text;
+      if (ans.email) return ans.email;
+      if (ans.number) return ans.number.toString();
+      if (ans.boolean !== undefined) return ans.boolean ? 'Sim' : 'Não';
+      return '';
+    }).join('\n');
+    const prompt = `Avalie as respostas abaixo de 0 a 100, considerando clareza, correção e completude. Apenas retorne o número:\n\n${respostas}`;
+    // Chamar IA (OpenAI modelo barato)
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 10,
+        temperature: 0
+      })
+    });
+    const openaiData = await openaiRes.json();
+    const nota = parseInt(openaiData.choices?.[0]?.message?.content.match(/\d+/)?.[0] || '0', 10);
+    // Mapear form_id para coluna
+    const formId = response.form_id;
+    const FORM_IDS = {
+      simples: 'OrKerl6D', // Português e Matemática
+      direcao: 'Z59Mv1sY', // Prova de Direção
+      admin: 'qWTxbaIK' // Português para Administrativo
+    };
+    let updateObj = {};
+    let colunaNota = null;
+    if (formId === FORM_IDS.simples) { updateObj.nota_prova_simples = nota; colunaNota = 'nota_prova_simples'; }
+    else if (formId === FORM_IDS.direcao) { updateObj.nota_prova_direcao = nota; colunaNota = 'nota_prova_direcao'; }
+    else if (formId === FORM_IDS.admin) { updateObj.nota_prova_admin = nota; colunaNota = 'nota_prova_admin'; }
+    console.log(`[WEBHOOK DEBUG] formId: ${formId}, coluna a atualizar: ${colunaNota}, nota: ${nota}`);
+    if (Object.keys(updateObj).length > 0) {
+      await supabase
+        .from('candidaturas')
+        .update(updateObj)
+        .eq('id', candidato.id);
+    }
+    res.json({ ok: true, nota, coluna: colunaNota, criterio: criterioUsado, candidato_id: candidato.id });
+  } catch (err) {
+    console.error('Erro no webhook de prova:', err);
+    res.status(500).json({ error: 'Erro ao processar webhook de prova' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
