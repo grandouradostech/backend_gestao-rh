@@ -252,6 +252,53 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
         console.log('Telefone não encontrado para envio UltraMsg');
       }
     }
+    // Enviar mensagem de provas se status for Provas
+    if (statusKey === 'provas') {
+      // Buscar vaga do candidato
+      let vaga = candidato.dados_estruturados?.profissional?.vaga || candidato.dados_completos?.profissional?.vaga || '';
+      vaga = vaga.toLowerCase();
+      // Regras para provas
+      let provasLinks = [
+        'Português e Matemática: https://granddos.typeform.com/to/OrKerl6D'
+      ];
+      if (vaga.includes('cnh') || vaga.includes('motorista')) {
+        provasLinks.push('Prova de Direção: https://granddos.typeform.com/to/Z59Mv1sY');
+      }
+      if (vaga.includes('admin')) {
+        provasLinks = [
+          'Noções básicas da língua portuguesa para vagas administrativas: https://admin.typeform.com/form/qWTxbaIK/create?block=682f389f-7324-4f8c-90dc-6e6459ef6615'
+        ];
+      }
+      // Mensagem formal
+      const msg = `Olá! Você avançou para a fase de provas do nosso processo seletivo. Para continuarmos com sua candidatura, precisamos que você responda as seguintes provas:\n\n${provasLinks.join('\n')}\n\nElas são essenciais para a continuidade do processo e não vão levar muito tempo. Contamos com sua participação!`;
+      // Enviar via UltraMsg
+      if (telefone) {
+        let tel = telefone.replace(/[^\d+]/g, '');
+        if (!tel.startsWith('+')) {
+          tel = '+55' + tel;
+        }
+        const dataMsg = qs.stringify({
+          "token": "nz7n5zoux1sjduar",
+          "to": tel,
+          "body": msg
+        });
+        const config = {
+          method: 'post',
+          url: 'https://api.ultramsg.com/instance117326/messages/chat',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: dataMsg
+        };
+        axios(config)
+          .then(function (response) {
+            console.log('UltraMsg enviado (provas):', JSON.stringify(response.data));
+          })
+          .catch(function (error) {
+            console.error('Erro UltraMsg (provas):', error);
+          });
+      } else {
+        console.log('Telefone não encontrado para envio UltraMsg (provas)');
+      }
+    }
     res.json({ success: true });
   } catch (err) {
     console.error('Erro PATCH status:', err);
