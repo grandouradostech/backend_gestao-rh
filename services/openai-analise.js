@@ -69,7 +69,8 @@ async function estruturarDados(response) {
         "nome": "Texto",
         "email": "Texto",
         "telefone": "Texto",
-        "cpf": "Texto"
+        "cpf": "Texto",
+        "cidade": "Texto"
       },
       "profissional": {
         "vaga": "Texto",

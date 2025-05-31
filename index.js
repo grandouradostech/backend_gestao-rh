@@ -322,6 +322,50 @@ app.patch('/candidaturas/:response_id/vaga', async (req, res) => {
   }
 });
 
+// Endpoint para calcular tempo médio por fase de uma vaga
+app.get('/vagas/:vaga_id/tempo-medio-fases', async (req, res) => {
+  const { vaga_id } = req.params;
+  try {
+    // Busca todas as candidaturas dessa vaga
+    const { data: candidaturas, error } = await supabase
+      .from('candidaturas')
+      .select(`fase_analisado_inicio, fase_analisado_fim, fase_provas_inicio, fase_provas_fim, fase_aprovados_inicio, fase_aprovados_fim, fase_entrevista_inicio, fase_entrevista_fim, dados_estruturados`)
+      .neq('deleted', true); // caso tenha soft delete
+    if (error) return res.status(500).json({ error: 'Erro ao buscar candidaturas' });
+    // Filtra candidaturas da vaga
+    const candidaturasVaga = candidaturas.filter(c => c.dados_estruturados?.profissional?.vaga === vaga_id);
+    // Função para calcular média em dias
+    function mediaDias(lista) {
+      if (!lista.length) return null;
+      return lista.reduce((a, b) => a + b, 0) / lista.length;
+    }
+    // Para cada fase, calcula a diferença em dias
+    const fases = [
+      { nome: 'fase_analisado', ini: 'fase_analisado_inicio', fim: 'fase_analisado_fim' },
+      { nome: 'fase_provas', ini: 'fase_provas_inicio', fim: 'fase_provas_fim' },
+      { nome: 'fase_aprovados', ini: 'fase_aprovados_inicio', fim: 'fase_aprovados_fim' },
+      { nome: 'fase_entrevista', ini: 'fase_entrevista_inicio', fim: 'fase_entrevista_fim' },
+    ];
+    const resultado = {};
+    fases.forEach(fase => {
+      const difs = candidaturasVaga
+        .map(c => {
+          const ini = c[fase.ini] ? new Date(c[fase.ini]) : null;
+          const fim = c[fase.fim] ? new Date(c[fase.fim]) : null;
+          if (ini && fim) {
+            return (fim - ini) / (1000 * 60 * 60 * 24); // dias
+          }
+          return null;
+        })
+        .filter(v => v !== null && !isNaN(v));
+      resultado[fase.nome] = mediaDias(difs);
+    });
+    res.json(resultado);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao calcular tempo médio por fase' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
