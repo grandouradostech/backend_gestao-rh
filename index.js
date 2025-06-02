@@ -261,12 +261,11 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     // Se reprovado, envia UltraMsg
     if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
       if (telefone) {
-        // Normaliza telefone
         telefone = telefone.replace(/[^\d+]/g, '');
         if (!telefone.startsWith('+')) {
           telefone = '+55' + telefone;
         }
-        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
+        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\n\nGente e Gestão.`;
         const dataMsg = qs.stringify({
           "token": "nz7n5zoux1sjduar",
           "to": telefone,
@@ -289,6 +288,36 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
         console.log('Telefone não encontrado para envio UltraMsg');
       }
     }
+    // Enviar mensagem de banco de talentos
+    if (statusKey === 'banco de talentos') {
+      if (telefone) {
+        telefone = telefone.replace(/[^\d+]/g, '');
+        if (!telefone.startsWith('+')) {
+          telefone = '+55' + telefone;
+        }
+        const msg = `BANCO DE TALENTOS\n\nOlá ${nome}! Tudo bem?\n\nAgradecemos por sua participação em nosso processo seletivo.\nGostaríamos de informar que seu currículo foi incluído em nosso banco de talentos. Caso surjam futuras oportunidades que estejam alinhadas ao seu perfil, entraremos em contato.\nDesejamos sucesso em sua trajetória profissional e esperamos poder contar com você em breve!\n\nAtenciosamente,\n\nGente e Gestão.`;
+        const dataMsg = qs.stringify({
+          "token": "nz7n5zoux1sjduar",
+          "to": telefone,
+          "body": msg
+        });
+        const config = {
+          method: 'post',
+          url: 'https://api.ultramsg.com/instance117326/messages/chat',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: dataMsg
+        };
+        axios(config)
+          .then(function (response) {
+            console.log('UltraMsg enviado (banco de talentos):', JSON.stringify(response.data));
+          })
+          .catch(function (error) {
+            console.error('Erro UltraMsg (banco de talentos):', error);
+          });
+      } else {
+        console.log('Telefone não encontrado para envio UltraMsg (banco de talentos)');
+      }
+    }
     // Enviar mensagem de entrevista se status for Entrevista
     if (statusKey === 'entrevista') {
       if (telefone) {
@@ -296,8 +325,8 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
         if (!telefone.startsWith('+')) {
           telefone = '+55' + telefone;
         }
-        // Formatar data para mensagem
-        let dataEntrevistaStr = candidato.data_entrevista ? new Date(candidato.data_entrevista).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'a definir';
+        // Formatar data para mensagem (sem segundos)
+        let dataEntrevistaStr = candidato.data_entrevista ? new Date(candidato.data_entrevista).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'a definir';
         const msg = `Olá, ${nome}. Tudo bem?\n\nSua entrevista ficou marcada para ${dataEntrevistaStr}.\n\nREGRAS PARA ACESSO NA AMBEV – GRAN DOURADOS:\n1. Deve-se apresentar documento de identificação com foto.\n2. Caso esteja utilizando um veículo, é possível estacionar no estacionamento externo ou na via lateral da rodovia.\n3. Todos os visitantes passarão por um breve treinamento de segurança sobre circulação interna.\n4. Não vir de blusa de time, chinelo.\n5. Vir de calça jeans e tênis ou botina.\n\nEndereço: Rodovia BR-163, km 268, sem número (Após a PRF).`;
         const dataMsg = qs.stringify({
           "token": "nz7n5zoux1sjduar",
@@ -630,7 +659,7 @@ app.post('/webhook-prova', async (req, res) => {
       await supabase
         .from('candidaturas')
         .update(updateObj)
-        .eq('id', candidato.id);
+        .eq('response_id', candidato.response_id);
     }
     res.json({ ok: true, nota, coluna: colunaNota, criterio: criterioUsado, candidato_id: candidato.id });
   } catch (err) {
