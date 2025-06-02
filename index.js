@@ -597,6 +597,41 @@ app.post('/webhook-prova', async (req, res) => {
   }
 });
 
+// ENDPOINTS DE REQUISITOS
+// Listar requisitos
+app.get('/requisitos', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('requisitos').select('*').order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar requisitos' });
+  }
+});
+// Inserir requisito
+app.post('/requisitos', async (req, res) => {
+  const { vaga_nome, requisito, tipo } = req.body;
+  if (!vaga_nome || !requisito || !tipo) return res.status(400).json({ error: 'Campos obrigatórios' });
+  try {
+    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, tipo }]).select();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao inserir requisito' });
+  }
+});
+// Remover requisito
+app.delete('/requisitos/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { error } = await supabase.from('requisitos').delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao remover requisito' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
