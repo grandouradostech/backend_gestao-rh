@@ -604,10 +604,12 @@ app.post('/webhook-prova', async (req, res) => {
     }
     // 5. Se não achou, tenta por nome (atenção: pode dar falso positivo)
     if (!candidato && nome) {
+      // Busca por nome no campo 'nome' OU no JSON 'dados_estruturados.pessoal.nome'
       const { data } = await supabase
         .from('candidaturas')
         .select('*')
-        .ilike('nome', `%${nome}%`)
+        .or(`nome.ilike.%${nome}%,dados_estruturados->pessoal->>nome.ilike.%${nome}%`)
+        .limit(1)
         .single();
       candidato = data;
       if (candidato) criterioUsado = 'nome';
