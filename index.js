@@ -73,16 +73,18 @@ function onlyGestor(req, res, next) {
   next();
 }
 
-// Rota para receber webhook do Typeform
+// Rota para receber webhook do Typeform (multi-formulário, análise IA completa)
 app.post('/typeform-webhook', async (req, res) => {
-  console.log('BODY:', JSON.stringify(req.body));
   try {
-    // Aceita tanto com wrapper form_response quanto direto
     const response = req.body.form_response || req.body;
+    const formId = response.form_id;
+    const FORM_IDS = ['ynFUyrA', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
+    if (!FORM_IDS.includes(formId)) {
+      return res.status(400).json({ error: 'form_id não permitido' });
+    }
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
-    console.log('response_id:', responseId);
-    // Upload currículo
+    // Processar anexos (currículo)
     const caminhoCurriculo = await processarAnexos(response);
     // Estruturar dados
     let dados_estruturados = null;
@@ -91,8 +93,41 @@ app.post('/typeform-webhook', async (req, res) => {
     } catch (e) {
       console.error('Erro ao estruturar dados:', e.message);
     }
-    // Analisar candidatura
-    const analise = await analisarCandidatura(response, caminhoCurriculo);
+    // Buscar requisitos da vaga
+    let vaga_nome = dados_estruturados?.profissional?.vaga || null;
+    let requisitosVaga = null;
+    if (vaga_nome) {
+      const { data: reqs, error: reqsError } = await supabase
+        .from('requisitos')
+        .select('*')
+        .ilike('vaga_nome', `%${vaga_nome}%`)
+        .maybeSingle();
+      if (reqsError) {
+        console.error('Erro ao buscar requisitos:', reqsError.message);
+      }
+      requisitosVaga = reqs;
+    }
+    // Montar prompt para IA
+    let prompt = '';
+    if (requisitosVaga) {
+      prompt = `Vaga: ${vaga_nome}
+Requisitos obrigatórios: ${requisitosVaga.requisito || '-'}
+Diferenciais: ${requisitosVaga.diferencial || '-'}
+\nDados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+      if (caminhoCurriculo) {
+        prompt += `\nCurrículo: (arquivo em ${caminhoCurriculo})`;
+      }
+      prompt += '\nAnalise se o candidato atende a cada requisito e diferencial. Dê um score de 0 a 100 de aderência à vaga e explique brevemente.';
+    } else {
+      prompt = `Dados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+    }
+    // Chamar IA (usando função existente, mas passando prompt customizado)
+    let analise = null;
+    try {
+      analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo);
+    } catch (e) {
+      console.error('Erro na análise IA:', e.message);
+    }
     // Extrair nome do candidato
     function nomeValido(nome) {
       if (!nome) return false;
@@ -129,32 +164,6 @@ app.post('/typeform-webhook', async (req, res) => {
         nome
       }, { onConflict: 'response_id' });
     if (error) throw error;
-
-    // Enviar mensagem UltraMsg se status for Reprovado
-    let status = analise?.status || analise?.kanban_status || analise?.resultado || null;
-    let telefone = (dados_estruturados && dados_estruturados.pessoal && dados_estruturados.pessoal.telefone) || null;
-    if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
-      const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\nGente e Gestão.`;
-      const data = qs.stringify({
-        "token": "nz7n5zoux1sjduar",
-        "to": telefone,
-        "body": msg
-      });
-      const config = {
-        method: 'post',
-        url: 'https://api.ultramsg.com/instance117326/messages/chat',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        data: data
-      };
-      axios(config)
-        .then(function (response) {
-          console.log('UltraMsg enviado:', JSON.stringify(response.data));
-        })
-        .catch(function (error) {
-          console.error('Erro UltraMsg:', error);
-        });
-    }
-
     res.status(200).send('Dados salvos com sucesso!');
   } catch (err) {
     console.error('Erro:', err);
@@ -605,30 +614,26 @@ app.use((req, res, next) => {
   next();
 });
 
-// ENDPOINTS DE REQUISITOS
+// ENDPOINTS DE REQUISITOS (NOVO MODELO)
 // Listar requisitos
 app.get('/requisitos', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('requisitos').select('*').order('created_at', { ascending: false });
-    console.log('[DEBUG][GET /requisitos] data:', data, 'error:', error);
+    const { data, error } = await supabase.from('requisitos').select('id, vaga_nome, requisito, diferencial').order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
-    console.error('[DEBUG][GET /requisitos] catch:', err);
     res.status(500).json({ error: 'Erro ao listar requisitos' });
   }
 });
 // Inserir requisito
 app.post('/requisitos', async (req, res) => {
-  const { vaga_nome, requisito, tipo } = req.body;
-  if (!vaga_nome || !requisito || !tipo) return res.status(400).json({ error: 'Campos obrigatórios' });
+  const { vaga_nome, requisito, diferencial } = req.body;
+  if (!vaga_nome || !requisito) return res.status(400).json({ error: 'Campos obrigatórios' });
   try {
-    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, tipo }]).select();
-    console.log('[DEBUG][POST /requisitos] data:', data, 'error:', error);
+    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, diferencial }]).select();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data[0]);
   } catch (err) {
-    console.error('[DEBUG][POST /requisitos] catch:', err);
     res.status(500).json({ error: 'Erro ao inserir requisito' });
   }
 });
