@@ -9,6 +9,8 @@ const supabase = createClient(
     db: { schema: 'public' }
 });
 
+const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
+
 async function processarAnexos(response) {
   try {
     // Log para debug do conteúdo de answers
@@ -74,28 +76,25 @@ async function processarAnexos(response) {
 
 async function fetchAllResponses() {
   let allResponses = [];
-  let page = 1;
-  
   try {
-    while(true) {
-      const res = await fetch(
-        `https://api.typeform.com/forms/${process.env.TYPEFORM_FORM_ID}/responses?page_size=200&page=${page}`,
-        { headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` } }
-      );
-      
-      if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-      
-      const data = await res.json();
-      allResponses = [...allResponses, ...(data.items || [])];
-      
-      if (!data.items || data.items.length < 200) break;
-      page++;
+    for (const formId of FORM_IDS) {
+      let page = 1;
+      while (true) {
+        const res = await fetch(
+          `https://api.typeform.com/forms/${formId}/responses?page_size=200&page=${page}`,
+          { headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+        const data = await res.json();
+        allResponses = [...allResponses, ...(data.items || [])];
+        if (!data.items || data.items.length < 200) break;
+        page++;
+      }
     }
-  } catch(error) {
+  } catch (error) {
     console.error('🚨 Erro na busca de respostas:', error.message);
     throw error;
   }
-  
   return allResponses;
 }
 
@@ -106,11 +105,22 @@ async function main() {
 
     for (const [index, response] of responses.entries()) {
       try {
+        // Verifica se já foi analisado
+        const { data: existente, error: erroBusca } = await supabase
+          .from('candidaturas')
+          .select('analise_ia')
+          .eq('response_id', response.response_id)
+          .maybeSingle();
+        if (erroBusca) {
+          console.error(`Erro ao buscar candidato ${response.response_id}:`, erroBusca.message);
+        }
+        if (existente && existente.analise_ia) {
+          console.log(`⏩ ${index + 1}/${responses.length} Já analisado, pulando: ${response.response_id}`);
+          continue;
+        }
         console.log(`⏳ Processando candidatura ${index + 1}/${responses.length}`);
-        
         // Processar anexos
         const caminhoCurriculo = await processarAnexos(response);
-        
         // Estruturar dados
         let dados_estruturados = null;
         try {
@@ -118,9 +128,38 @@ async function main() {
         } catch (e) {
           console.error('⚠️ Erro ao estruturar dados:', e.message);
         }
+        // Buscar requisitos da vaga
+        let vaga_nome = dados_estruturados?.profissional?.vaga || null;
+        let requisitosVaga = null;
+        if (vaga_nome) {
+          const { data: reqs, error: reqsError } = await supabase
+            .from('requisitos')
+            .select('*')
+            .ilike('vaga_nome', `%${vaga_nome}%`)
+            .maybeSingle();
+          if (reqsError) {
+            console.error('Erro ao buscar requisitos:', reqsError.message);
+          }
+          requisitosVaga = reqs;
+        }
+        // Montar prompt para IA
+        let prompt = '';
+        if (requisitosVaga) {
+          prompt = `Vaga: ${vaga_nome}\nRequisitos obrigatórios: ${requisitosVaga.requisito || '-'}\nDiferenciais: ${requisitosVaga.diferencial || '-'}\n\nDados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+          if (caminhoCurriculo) {
+            prompt += `\nCurrículo: (arquivo em ${caminhoCurriculo})`;
+          }
+          prompt += '\nAnalise se o candidato atende a cada requisito e diferencial. Dê um score de 0 a 100 de aderência à vaga e explique brevemente.';
+        } else {
+          prompt = `Dados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+        }
         // Analisar candidatura
-        const analise = await analisarCandidatura(response, caminhoCurriculo);
-
+        let analise = null;
+        try {
+          analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo);
+        } catch (e) {
+          console.error('Erro na análise IA:', e.message);
+        }
         // Extrair nome do candidato
         function nomeValido(nome) {
           if (!nome) return false;
@@ -142,7 +181,6 @@ async function main() {
           }
           nome = nomeValido(nomeTypeform) ? nomeTypeform : 'Não identificado';
         }
-
         // Salvar no banco
         const { error } = await supabase
           .from('candidaturas')
@@ -157,15 +195,12 @@ async function main() {
             status: response.status || 'Analisado por IA',
             nome
           }, { onConflict: 'response_id' });
-
         if (error) throw error;
         console.log(`✅ ${index + 1}/${responses.length} Processado: ${response.response_id}`);
-
       } catch (error) {
         console.error(`⚠️ Erro no processamento da candidatura ${response.response_id}:`, error.message);
       }
     }
-    
     console.log('🎉 Processamento concluído com sucesso!');
   } catch(error) {
     console.error('💥 Erro crítico:', error.message);

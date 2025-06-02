@@ -78,7 +78,7 @@ app.post('/typeform-webhook', async (req, res) => {
   try {
     const response = req.body.form_response || req.body;
     const formId = response.form_id;
-    const FORM_IDS = ['ynFUyrA', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
+    const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
     if (!FORM_IDS.includes(formId)) {
       return res.status(400).json({ error: 'form_id não permitido' });
     }
