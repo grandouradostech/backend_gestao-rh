@@ -174,7 +174,7 @@ Diferenciais: ${requisitosVaga.diferencial || '-'}
 // Endpoint PATCH para atualizar status e enviar UltraMsg se reprovado
 app.patch('/candidaturas/:response_id/status', async (req, res) => {
   const { response_id } = req.params;
-  const { status, assumido_por, assumido_por_nome } = req.body;
+  const { status, assumido_por, assumido_por_nome, data_entrevista } = req.body;
   try {
     // Busca o candidato atual para ver se já tem assumido_em e status_history
     const { data: candidatoAtual, error: errorBusca } = await supabase
@@ -217,6 +217,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     if (!candidatoAtual.assumido_em && assumido_por) {
       updateObj.assumido_em = new Date().toISOString();
     }
+    if (data_entrevista) updateObj.data_entrevista = data_entrevista;
     // Atualiza status_history
     const agora = new Date().toISOString();
     let novoHistorico = Array.isArray(candidatoAtual.status_history) ? [...candidatoAtual.status_history] : [];
@@ -286,6 +287,38 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
           });
       } else {
         console.log('Telefone não encontrado para envio UltraMsg');
+      }
+    }
+    // Enviar mensagem de entrevista se status for Entrevista
+    if (statusKey === 'entrevista') {
+      if (telefone) {
+        telefone = telefone.replace(/[^\d+]/g, '');
+        if (!telefone.startsWith('+')) {
+          telefone = '+55' + telefone;
+        }
+        // Formatar data para mensagem
+        let dataEntrevistaStr = candidato.data_entrevista ? new Date(candidato.data_entrevista).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'a definir';
+        const msg = `Olá, ${nome}. Tudo bem?\n\nSua entrevista ficou marcada para ${dataEntrevistaStr}.\n\nREGRAS PARA ACESSO NA AMBEV – GRAN DOURADOS:\n1. Deve-se apresentar documento de identificação com foto.\n2. Caso esteja utilizando um veículo, é possível estacionar no estacionamento externo ou na via lateral da rodovia.\n3. Todos os visitantes passarão por um breve treinamento de segurança sobre circulação interna.\n4. Não vir de blusa de time, chinelo.\n5. Vir de calça jeans e tênis ou botina.\n\nEndereço: Rodovia BR-163, km 268, sem número (Após a PRF).`;
+        const dataMsg = qs.stringify({
+          "token": "nz7n5zoux1sjduar",
+          "to": telefone,
+          "body": msg
+        });
+        const config = {
+          method: 'post',
+          url: 'https://api.ultramsg.com/instance117326/messages/chat',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          data: dataMsg
+        };
+        axios(config)
+          .then(function (response) {
+            console.log('UltraMsg enviado (entrevista):', JSON.stringify(response.data));
+          })
+          .catch(function (error) {
+            console.error('Erro UltraMsg (entrevista):', error);
+          });
+      } else {
+        console.log('Telefone não encontrado para envio UltraMsg (entrevista)');
       }
     }
     // Enviar mensagem de provas se status for Provas
