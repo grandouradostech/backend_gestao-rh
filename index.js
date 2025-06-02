@@ -604,15 +604,30 @@ app.post('/webhook-prova', async (req, res) => {
     }
     // 5. Se não achou, tenta por nome (atenção: pode dar falso positivo)
     if (!candidato && nome) {
-      // Busca por nome no campo 'nome' OU no JSON 'dados_estruturados.pessoal.nome'
-      const { data } = await supabase
+      // Função para sanitizar nome: remove parênteses, acentos, espaços extras e deixa minúsculo
+      function sanitizarNome(str) {
+        if (!str) return '';
+        return str
+          .normalize('NFD').replace(/[ -]/g, '') // remove acentos
+          .replace(/[()]/g, '') // remove parênteses
+          .replace(/\s+/g, ' ') // espaços múltiplos para um só
+          .trim()
+          .toLowerCase();
+      }
+      const nomeSanitizado = sanitizarNome(nome);
+      // Busca todos os candidatos e compara nome sanitizado
+      const { data: candidatos } = await supabase
         .from('candidaturas')
-        .select('*')
-        .or(`nome.ilike.%${nome}%,dados_estruturados->pessoal->>nome.ilike.%${nome}%`)
-        .limit(1)
-        .single();
-      candidato = data;
-      if (candidato) criterioUsado = 'nome';
+        .select('*, dados_estruturados')
+        .limit(1000); // limite de segurança
+      if (Array.isArray(candidatos)) {
+        candidato = candidatos.find(c => {
+          const nomeBanco = sanitizarNome(c.nome);
+          const nomeEstruturado = sanitizarNome(c.dados_estruturados?.pessoal?.nome);
+          return nomeBanco === nomeSanitizado || nomeEstruturado === nomeSanitizado;
+        });
+        if (candidato) criterioUsado = 'nome';
+      }
     }
     if (!candidato) {
       console.log('[WEBHOOK DEBUG] Nenhum candidato encontrado por nenhum critério!');
