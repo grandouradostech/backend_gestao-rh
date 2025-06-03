@@ -9,6 +9,7 @@ const qs = require('qs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const SECRET = process.env.JWT_SECRET || 'supersecret';
+console.log('JWT_SECRET em uso:', SECRET);
 const fs = require('fs');
 const path = require('path');
 
@@ -56,13 +57,15 @@ async function processarAnexos(response) {
 // Middleware para autenticação
 function auth(req, res, next) {
   const authHeader = req.headers.authorization;
+  console.log('Authorization header:', authHeader);
   if (!authHeader) return res.status(401).json({ error: 'Token não enviado' });
   const token = authHeader.split(' ')[1];
   try {
     const user = jwt.verify(token, SECRET);
     req.user = user;
     next();
-  } catch {
+  } catch (e) {
+    console.log('Erro JWT:', e.message);
     return res.status(401).json({ error: 'Token inválido' });
   }
 }
