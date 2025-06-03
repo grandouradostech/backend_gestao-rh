@@ -174,7 +174,7 @@ Diferenciais: ${requisitosVaga.diferencial || '-'}
 // Endpoint PATCH para atualizar status e enviar UltraMsg se reprovado
 app.patch('/candidaturas/:response_id/status', async (req, res) => {
   const { response_id } = req.params;
-  const { status, assumido_por, assumido_por_nome, data_entrevista } = req.body;
+  const { status, assumido_por, assumido_por_nome, data_entrevista, observacao } = req.body;
   try {
     // Busca o candidato atual para ver se já tem assumido_em e status_history
     const { data: candidatoAtual, error: errorBusca } = await supabase
@@ -218,6 +218,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       updateObj.assumido_em = new Date().toISOString();
     }
     if (data_entrevista) updateObj.data_entrevista = data_entrevista;
+    if (typeof observacao === 'string') updateObj.observacao = observacao;
     // Atualiza status_history
     const agora = new Date().toISOString();
     let novoHistorico = Array.isArray(candidatoAtual.status_history) ? [...candidatoAtual.status_history] : [];
