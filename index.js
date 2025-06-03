@@ -731,6 +731,66 @@ app.delete('/requisitos/:id', async (req, res) => {
   }
 });
 
+// --- ANOTAÇÕES DO GESTOR ---
+
+// Listar anotações do gestor logado
+app.get('/anotacoes', auth, async (req, res) => {
+  const { user } = req;
+  const { data, error } = await supabase
+    .from('anotacoes')
+    .select('*')
+    .eq('usuario_id', user.id)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// Criar nova anotação
+app.post('/anotacoes', auth, async (req, res) => {
+  const { anotacao } = req.body;
+  const { user } = req;
+  if (!anotacao || !anotacao.trim()) return res.status(400).json({ error: 'Anotação obrigatória' });
+  const { data, error } = await supabase
+    .from('anotacoes')
+    .insert([{
+      usuario_id: user.id,
+      usuario_nome: user.nome,
+      anotacao
+    }])
+    .select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data[0]);
+});
+
+// Atualizar anotação (só do próprio usuário)
+app.patch('/anotacoes/:id', auth, async (req, res) => {
+  const { id } = req.params;
+  const { anotacao } = req.body;
+  const { user } = req;
+  if (!anotacao || !anotacao.trim()) return res.status(400).json({ error: 'Anotação obrigatória' });
+  const { data, error } = await supabase
+    .from('anotacoes')
+    .update({ anotacao, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('usuario_id', user.id)
+    .select();
+  if (error || !data || !data[0]) return res.status(500).json({ error: error?.message || 'Não encontrado' });
+  res.json(data[0]);
+});
+
+// Deletar anotação (só do próprio usuário)
+app.delete('/anotacoes/:id', auth, async (req, res) => {
+  const { id } = req.params;
+  const { user } = req;
+  const { error } = await supabase
+    .from('anotacoes')
+    .delete()
+    .eq('id', id)
+    .eq('usuario_id', user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
