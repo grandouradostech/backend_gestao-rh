@@ -190,7 +190,6 @@ ${dadosSanitized}`;
   } catch (error) {
     console.error('🔍 Erro na análise da candidatura:', error.message);
     if (typeof rawAnalysis !== 'undefined') {
-      console.log('Resposta crua:', rawAnalysis);
     }
     return { 
       error: "Erro na análise",
