@@ -19,11 +19,18 @@ app.use(express.json());
 
 async function processarAnexos(response) {
   try {
+    console.log('[WEBHOOK] processarAnexos - response:', JSON.stringify(response.answers, null, 2));
     const campoCurriculo = response.answers.find(a => 
       a.field.id === 'dmlXVJZuZ7BH' // ID do campo de currículo
     );
-    if (!campoCurriculo) return null;
-    if (campoCurriculo.type !== 'file_url' || !campoCurriculo.file_url) return null;
+    if (!campoCurriculo) {
+      console.log('[WEBHOOK] Campo de currículo não encontrado.');
+      return null;
+    }
+    if (campoCurriculo.type !== 'file_url' || !campoCurriculo.file_url) {
+      console.log('[WEBHOOK] Campo de currículo sem URL do arquivo.');
+      return null;
+    }
     const fileUrl = campoCurriculo.file_url;
     const fileName = fileUrl.split('/').pop();
     const ext = fileName.split('.').pop().toLowerCase();
@@ -31,11 +38,16 @@ async function processarAnexos(response) {
     if (ext === 'pdf') contentType = 'application/pdf';
     if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
     if (ext === 'png') contentType = 'image/png';
+    console.log(`[WEBHOOK] Baixando arquivo ${fileName} (${fileUrl})...`);
     const resposta = await fetch(fileUrl, {
       headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
     });
-    if (!resposta.ok) return null;
+    if (!resposta.ok) {
+      console.log(`[WEBHOOK] Falha ao baixar arquivo do Typeform. Status: ${resposta.status}`);
+      return null;
+    }
     const buffer = await resposta.buffer();
+    console.log(`[WEBHOOK] Upload para Supabase Storage...`);
     const { data, error } = await supabase.storage
       .from('curriculo')
       .upload(
@@ -47,9 +59,14 @@ async function processarAnexos(response) {
           cacheControl: '3600'
         }
       );
-    if (error) return null;
+    if (error) {
+      console.log(`[WEBHOOK] Erro no upload para Supabase:`, error.message);
+      return null;
+    }
+    console.log(`[WEBHOOK] Upload concluído em ${response.response_id}/${fileName}`);
     return `${response.response_id}/${fileName}`;
   } catch (error) {
+    console.error('[WEBHOOK] Erro no upload do currículo:', error.message);
     return null;
   }
 }
