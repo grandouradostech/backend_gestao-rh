@@ -20,15 +20,10 @@ app.use(express.json());
 async function processarAnexos(response) {
   try {
     console.log('[WEBHOOK] processarAnexos - response:', JSON.stringify(response.answers, null, 2));
-    const campoCurriculo = response.answers.find(a => 
-      a.field.id === 'dmlXVJZuZ7BH' // ID do campo de currículo
-    );
+    // Procura o primeiro campo do tipo file_url
+    const campoCurriculo = response.answers.find(a => a.type === 'file_url' && a.file_url);
     if (!campoCurriculo) {
       console.log('[WEBHOOK] Campo de currículo não encontrado.');
-      return null;
-    }
-    if (campoCurriculo.type !== 'file_url' || !campoCurriculo.file_url) {
-      console.log('[WEBHOOK] Campo de currículo sem URL do arquivo.');
       return null;
     }
     const fileUrl = campoCurriculo.file_url;
