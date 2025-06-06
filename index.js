@@ -17,7 +17,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-async function processarAnexos(response) {
+async function processarAnexos(response, responseId) {
   try {
     console.log('[WEBHOOK] processarAnexos - response:', JSON.stringify(response.answers, null, 2));
     // Procura o primeiro campo do tipo file_url
@@ -46,7 +46,7 @@ async function processarAnexos(response) {
     const { data, error } = await supabase.storage
       .from('curriculo')
       .upload(
-        `${response.response_id}/${fileName}`,
+        `${responseId}/${fileName}`,
         buffer,
         { 
           contentType,
@@ -58,8 +58,8 @@ async function processarAnexos(response) {
       console.log(`[WEBHOOK] Erro no upload para Supabase:`, error.message);
       return null;
     }
-    console.log(`[WEBHOOK] Upload concluído em ${response.response_id}/${fileName}`);
-    return `${response.response_id}/${fileName}`;
+    console.log(`[WEBHOOK] Upload concluído em ${responseId}/${fileName}`);
+    return `${responseId}/${fileName}`;
   } catch (error) {
     console.error('[WEBHOOK] Erro no upload do currículo:', error.message);
     return null;
@@ -100,7 +100,7 @@ app.post('/typeform-webhook', async (req, res) => {
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
     // Processar anexos (currículo)
-    const caminhoCurriculo = await processarAnexos(response);
+    const caminhoCurriculo = await processarAnexos(response, responseId);
     // Estruturar dados
     let dados_estruturados = null;
     try {

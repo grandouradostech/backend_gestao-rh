@@ -117,45 +117,45 @@ async function analisarCandidatura(response, caminhoCurriculo) {
 
     const prompt = `Você é um especialista em recrutamento e seleção, extremamente criterioso e analítico.
 
-Sua tarefa é analisar um candidato com base nas seguintes informações, fornecendo sua análise exclusivamente no formato JSON.
+    Sua tarefa é analisar um candidato com base nas seguintes informações, fornecendo sua análise exclusivamente no formato JSON.
 
----
-REGRAS E LÓGICA DA ANÁLISE:
+    ---
+    REGRAS E LÓGICA DA ANÁLISE:
 
-1.  Seja Criterioso: A pontuação deve ser rigorosa. Pré-requisitos não atendidos devem impactar a nota severamente.
-2.  Baseie-se em Evidências: Não presuma ou invente informações. Todas as análises devem ser baseadas nos dados fornecidos.
-3.  Pontuação Objetiva: Para o campo "pontuacao_final", gere um número isolado de 0 a 100, considerando a aderência do candidato aos pré-requisitos, diferenciais e atividades da vaga.
-4.  Lógica da Recomendação: Para o campo "recomendacao", use a pontuação final como base:
-    - De 0 a 40: "Não Recomendado"
-    - De 41 a 70: "Recomendado"
-    - De 71 a 100: "Altamente Recomendado"
-5.  Formato JSON Exclusivo: Sua resposta final deve ser APENAS o código JSON, sem nenhum texto introdutório ou final.
+    1.  Seja Criterioso: A pontuação deve ser rigorosa. Pré-requisitos não atendidos devem impactar a nota severamente.
+    2.  Baseie-se em Evidências: Não presuma ou invente informações. Todas as análises devem ser baseadas nos dados fornecidos.
+    3.  Pontuação Objetiva: Para o campo "pontuacao_final", gere um número isolado de 0 a 100, considerando a aderência do candidato aos pré-requisitos, diferenciais e atividades da vaga.
+    4.  Lógica da Recomendação: Para o campo "recomendacao", use a pontuação final como base:
+        - De 0 a 40: "Não Recomendado"
+        - De 41 a 70: "Recomendado"
+        - De 71 a 100: "Altamente Recomendado"
+    5.  Formato JSON Exclusivo: Sua resposta final deve ser APENAS o código JSON, sem nenhum texto introdutório ou final.
 
-ANÁLISE ESPERADA (SAÍDA EM FORMATO JSON):
-{
-  "resumo_profissional": "Um resumo conciso do perfil do candidato e sua adequação à vaga.",
-  "pontos_fortes": [
+    ANÁLISE ESPERADA (SAÍDA EM FORMATO JSON):
     {
-      "ponto": "Exemplo: Formação acadêmica relevante.",
-      "evidencia": "Exemplo: Currículo menciona sua graduação em Engenharia."
+      "resumo_profissional": "Um resumo conciso do perfil do candidato e sua adequação à vaga.",
+      "pontos_fortes": [
+        {
+          "ponto": "Exemplo: Formação acadêmica relevante.",
+          "evidencia": "Exemplo: Currículo menciona sua graduação em Engenharia."
+        }
+      ],
+      "pontos_fracos": [
+        {
+          "ponto": "Exemplo: Falta de experiência direta.",
+          "evidencia": "Exemplo: Questionário indica que nunca trabalhou com entregas."
+        }
+      ],
+      "pontuacao_final": 0,
+      "justificativa_pontuacao": "A pontuação foi definida com base na falta do pré-requisito X, mas considerando a boa aderência ao diferencial Y.",
+      "recomendacao": "Não Recomendado",
+      "perguntas_entrevista": [
+        "Primeira pergunta baseada nos pontos fracos ou red flags...",
+        "Segunda pergunta para explorar uma possível inconsistência..."
+      ]
     }
-  ],
-  "pontos_fracos": [
-    {
-      "ponto": "Exemplo: Falta de experiência direta.",
-      "evidencia": "Exemplo: Questionário indica que nunca trabalhou com entregas."
-    }
-  ],
-  "pontuacao_final": 0,
-  "justificativa_pontuacao": "A pontuação foi definida com base na falta do pré-requisito X, mas considerando a boa aderência ao diferencial Y.",
-  "recomendacao": "Não Recomendado",
-  "perguntas_entrevista": [
-    "Primeira pergunta baseada nos pontos fracos ou red flags...",
-    "Segunda pergunta para explorar uma possível inconsistência..."
-  ]
-}
 
-DADOS DO CANDIDATO:
+    DADOS DO CANDIDATO:
 ${dadosSanitized}`;
 
     const completion = await openai.chat.completions.create({
@@ -193,7 +193,7 @@ ${dadosSanitized}`;
     }
     return { 
       error: "Erro na análise",
-      details: error.message 
+      details: error.message
     };
   }
 }
