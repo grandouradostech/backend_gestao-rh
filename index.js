@@ -713,7 +713,7 @@ app.use((req, res, next) => {
 // Listar requisitos
 app.get('/requisitos', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('requisitos').select('id, vaga_nome, requisito, diferencial').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('requisitos').select('id, vaga_nome, requisito, diferencial, cidades').order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
@@ -722,10 +722,10 @@ app.get('/requisitos', async (req, res) => {
 });
 // Inserir requisito
 app.post('/requisitos', async (req, res) => {
-  const { vaga_nome, requisito, diferencial } = req.body;
+  const { vaga_nome, requisito, diferencial, cidades } = req.body;
   if (!vaga_nome || !requisito) return res.status(400).json({ error: 'Campos obrigatórios' });
   try {
-    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, diferencial }]).select();
+    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, diferencial, cidades }]).select();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data[0]);
   } catch (err) {
