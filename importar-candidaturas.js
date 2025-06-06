@@ -142,6 +142,28 @@ async function main() {
           }
           requisitosVaga = reqs;
         }
+        // Verificação de cidade via IA
+        const cidadeCandidato = dados_estruturados?.pessoal?.cidade?.trim();
+        const cidadesRequisito = (requisitosVaga?.cidades || '').trim();
+        let cidadeValida = false;
+        if (cidadeCandidato && cidadesRequisito) {
+          // Prompt para IA decidir se a cidade do candidato é compatível
+          const promptCidade = `A cidade do candidato é: "${cidadeCandidato}". As cidades permitidas para a vaga são: [${cidadesRequisito}].
+Responda apenas com SIM ou NÃO: A cidade do candidato corresponde a alguma das cidades permitidas, considerando possíveis erros de digitação, variações ou abreviações?`;
+          try {
+            const respostaCidade = await analisarCandidatura({ ...response, prompt_custom: promptCidade }, null);
+            const respostaStr = (typeof respostaCidade === 'string' ? respostaCidade : respostaCidade?.choices?.[0]?.message?.content || '').toLowerCase();
+            if (respostaStr.includes('sim')) cidadeValida = true;
+          } catch (e) {
+            console.error('Erro na análise IA de cidade:', e.message);
+          }
+        } else {
+          cidadeValida = true; // Se não há cidade informada ou cidades permitidas, não bloqueia
+        }
+        if (!cidadeValida) {
+          console.log(`🚫 ${index + 1}/${responses.length} Cidade '${cidadeCandidato}' não reconhecida como permitida pela IA para a vaga '${vaga_nome}'. Pulando candidato ${response.response_id}`);
+          continue;
+        }
         // Montar prompt para IA
         let prompt = '';
         if (requisitosVaga) {
