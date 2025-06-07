@@ -103,7 +103,7 @@ async function estruturarDados(response) {
   }
 }
 
-async function analisarCandidatura(response, caminhoCurriculo) {
+async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = null) {
   let rawAnalysis;
   try {
     const textoCurriculo = caminhoCurriculo 
@@ -115,48 +115,41 @@ async function analisarCandidatura(response, caminhoCurriculo) {
       curriculo: textoCurriculo
     }));
 
-    const prompt = `Você é um especialista em recrutamento e seleção, extremamente criterioso e analítico.
-
-    Sua tarefa é analisar um candidato com base nas seguintes informações, fornecendo sua análise exclusivamente no formato JSON.
-
-    ---
-    REGRAS E LÓGICA DA ANÁLISE:
-
-    1.  Seja Criterioso: A pontuação deve ser rigorosa. Pré-requisitos não atendidos devem impactar a nota severamente.
-    2.  Baseie-se em Evidências: Não presuma ou invente informações. Todas as análises devem ser baseadas nos dados fornecidos.
-    3.  Pontuação Objetiva: Para o campo "pontuacao_final", gere um número isolado de 0 a 100, considerando a aderência do candidato aos pré-requisitos, diferenciais e atividades da vaga.
-    4.  Lógica da Recomendação: Para o campo "recomendacao", use a pontuação final como base:
-        - De 0 a 40: "Não Recomendado"
-        - De 41 a 70: "Recomendado"
-        - De 71 a 100: "Altamente Recomendado"
-    5.  Formato JSON Exclusivo: Sua resposta final deve ser APENAS o código JSON, sem nenhum texto introdutório ou final.
-
-    ANÁLISE ESPERADA (SAÍDA EM FORMATO JSON):
-    {
-      "resumo_profissional": "Um resumo conciso do perfil do candidato e sua adequação à vaga.",
-      "pontos_fortes": [
-        {
-          "ponto": "Exemplo: Formação acadêmica relevante.",
-          "evidencia": "Exemplo: Currículo menciona sua graduação em Engenharia."
-        }
-      ],
-      "pontos_fracos": [
-        {
-          "ponto": "Exemplo: Falta de experiência direta.",
-          "evidencia": "Exemplo: Questionário indica que nunca trabalhou com entregas."
-        }
-      ],
-      "pontuacao_final": 0,
-      "justificativa_pontuacao": "A pontuação foi definida com base na falta do pré-requisito X, mas considerando a boa aderência ao diferencial Y.",
-      "recomendacao": "Não Recomendado",
-      "perguntas_entrevista": [
-        "Primeira pergunta baseada nos pontos fracos ou red flags...",
-        "Segunda pergunta para explorar uma possível inconsistência..."
-      ]
+    // Novo prompt super robusto
+    let prompt = '';
+    // Estruturar requisitos e diferenciais como arrays
+    let requisitosArr = [];
+    let diferenciaisArr = [];
+    let descricaoVaga = '';
+    let tituloVaga = '';
+    let cidadesArr = [];
+    if (requisitosVaga) {
+      // Tenta converter requisitos e diferenciais em arrays
+      if (typeof requisitosVaga.requisito === 'string') {
+        requisitosArr = requisitosVaga.requisito.split(',').map(r => r.trim()).filter(Boolean);
+      } else if (Array.isArray(requisitosVaga.requisito)) {
+        requisitosArr = requisitosVaga.requisito;
+      }
+      if (typeof requisitosVaga.diferencial === 'string') {
+        diferenciaisArr = requisitosVaga.diferencial.split(',').map(d => d.trim()).filter(Boolean);
+      } else if (Array.isArray(requisitosVaga.diferencial)) {
+        diferenciaisArr = requisitosVaga.diferencial;
+      }
+      if (typeof requisitosVaga.cidades === 'string') {
+        cidadesArr = requisitosVaga.cidades.split(',').map(c => c.trim()).filter(Boolean);
+      } else if (Array.isArray(requisitosVaga.cidades)) {
+        cidadesArr = requisitosVaga.cidades;
+      }
+      descricaoVaga = requisitosVaga.descricao || '';
+      tituloVaga = requisitosVaga.vaga_nome || requisitosVaga.titulo || '';
     }
-
-    DADOS DO CANDIDATO:
-${dadosSanitized}`;
+    prompt = `Você é um especialista em recrutamento e seleção.\nSua tarefa é analisar um candidato para uma vaga, com base nas informações abaixo, e fornecer sua análise exclusivamente no formato JSON.\n\n---\nREGRAS E LÓGICA DA ANÁLISE\n\n1. Considere apenas os requisitos e diferenciais explicitamente listados na vaga (veja o campo requisitos_da_vaga abaixo).\n   - Não penalize o candidato por informações pessoais (como estado civil, filhos, etc.) a menos que estejam nos requisitos.\n   - Ignore informações que não estejam relacionadas aos requisitos ou diferenciais da vaga.\n2. Requisitos obrigatórios devem ter peso maior na pontuação.\n   - Se o candidato não atender a um requisito obrigatório, isso deve impactar fortemente a nota.\n   - Diferenciais servem apenas para agregar pontos, nunca para descontar.\n3. Se faltar informação para algum requisito obrigatório, mencione isso na análise e desconte pontos apenas se a ausência impedir a avaliação do requisito.\n4. Baseie-se apenas em evidências: não presuma ou invente informações. Todas as análises devem ser baseadas nos dados fornecidos.\n5. Pontuação:\n   - Para o campo \"pontuacao_final\", gere um número de 0 a 100, considerando a aderência do candidato aos requisitos obrigatórios e diferenciais.\n   - Explique claramente como chegou a essa nota.\n6. Justificativa estruturada:\n   - Liste em um array os motivos de desconto de pontos (por requisito não atendido ou informação ausente).\n   - Liste em outro array os motivos de bônus (por diferenciais atendidos).\n   - Além disso, forneça um texto livre resumindo a justificativa.\n7. Recomendação:\n   - Use a pontuação final como base:\n     - De 0 a 40: \"Não Recomendado\"\n     - De 41 a 70: \"Recomendado\"\n     - De 71 a 100: \"Altamente Recomendado\"\n8. Perguntas para entrevista:\n   - Gere perguntas focadas nos pontos fracos, dúvidas ou inconsistências identificadas nas respostas do candidato.\n9. Formato de resposta:\n   - Sua resposta final deve ser APENAS o código JSON, sem nenhum texto introdutório ou final.\n\n---\nDADOS_DO_CANDIDATO:\n${dadosSanitized}\n\nREQUISITOS_DA_VAGA:\n${JSON.stringify({
+      titulo: tituloVaga,
+      descricao: descricaoVaga,
+      requisitos: requisitosArr,
+      diferenciais: diferenciaisArr,
+      cidades: cidadesArr
+    })}`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo-0125",

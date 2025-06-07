@@ -9,7 +9,15 @@ const supabase = createClient(
     db: { schema: 'public' }
 });
 
-const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
+const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V'];
+
+function sanitizeFilename(filename) {
+  // Remove acentos e caracteres especiais
+  return filename
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[^a-zA-Z0-9._-]/g, '_'); // troca outros caracteres por _
+}
+
 
 async function processarAnexos(response) {
   try {
@@ -50,10 +58,11 @@ async function processarAnexos(response) {
 
     const buffer = await resposta.buffer();
     console.log(`[CURRICULO] Resposta ${response.response_id}: Upload para Supabase Storage...`);
+    const sanitizedFileName = sanitizeFilename(fileName);
     const { data, error } = await supabase.storage
       .from('curriculo')
       .upload(
-        `${response.response_id}/${fileName}`,
+        `${response.response_id}/${sanitizedFileName}`,
         buffer,
         { 
           contentType,
@@ -66,8 +75,8 @@ async function processarAnexos(response) {
       console.log(`[CURRICULO] Resposta ${response.response_id}: Erro no upload para Supabase:`, error.message);
       return null;
     }
-    console.log(`[CURRICULO] Resposta ${response.response_id}: Upload concluído em ${response.response_id}/${fileName}`);
-    return `${response.response_id}/${fileName}`;
+    console.log(`[CURRICULO] Resposta ${response.response_id}: Upload concluído em ${response.response_id}/${sanitizedFileName}`);
+    return `${response.response_id}/${sanitizedFileName}`;
   } catch (error) {
     console.error('❌ Erro no upload do currículo:', error.message);
     return null;
@@ -80,6 +89,8 @@ async function fetchAllResponses() {
     for (const formId of FORM_IDS) {
       let page = 1;
       while (true) {
+        // Debug do token
+        console.log('TOKEN:', JSON.stringify(process.env.TYPEFORM_TOKEN));
         const res = await fetch(
           `https://api.typeform.com/forms/${formId}/responses?page_size=200&page=${page}`,
           { headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` } }
@@ -96,6 +107,45 @@ async function fetchAllResponses() {
     throw error;
   }
   return allResponses;
+}
+
+function padronizarCidades(cidades) {
+  return cidades
+    .replace(/ e /gi, ',') // troca ' e ' por vírgula
+    .replace(/[.]/g, '')   // remove pontos finais
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeCity(city) {
+  if (!city) return '';
+  return city
+    .normalize('NFD').replace(/[0-\u036f]/g, '') // remove acentos
+    .replace(/\b(ms|sp|rj|mg|pr|sc|rs|es|ba|go|mt|pa|am|ap|rr|ro|ac|al|ce|ma|pb|pe|pi|rn|se|to)\b/gi, '') // remove siglas de estado
+    .replace(/[\/\-]/g, ' ') // troca / e - por espaço
+    .replace(/[^a-zA-Z0-9 ]/g, '') // remove outros caracteres especiais
+    .replace(/\s+/g, ' ') // espaços múltiplos para um só
+    .toLowerCase()
+    .trim();
+}
+
+// Função para buscar resposta de CNH do candidato
+function getRespostaCNH(dados_estruturados, response) {
+  // Tente buscar em dados estruturados
+  if (dados_estruturados?.profissional?.cnh) return dados_estruturados.profissional.cnh;
+  // Ou busque no array de respostas do Typeform
+  if (Array.isArray(response.answers)) {
+    const cnhAnswer = response.answers.find(ans =>
+      ans.field && (
+        (ans.field.id && ans.field.id.toLowerCase().includes('cnh')) ||
+        (ans.field.ref && ans.field.ref.toLowerCase().includes('cnh'))
+      )
+    );
+    if (cnhAnswer && (cnhAnswer.text || cnhAnswer.choice?.label)) {
+      return cnhAnswer.text || cnhAnswer.choice.label;
+    }
+  }
+  return '';
 }
 
 async function main() {
@@ -142,32 +192,50 @@ async function main() {
           }
           requisitosVaga = reqs;
         }
+        // Buscar resposta de CNH do candidato
+        const respostaCNH = getRespostaCNH(dados_estruturados, response);
+        // Detectar se a vaga exige CNH nos requisitos
+        const exigeCNH = requisitosVaga?.requisito && requisitosVaga.requisito.toLowerCase().includes('cnh');
         // Verificação de cidade via IA
-        const cidadeCandidato = dados_estruturados?.pessoal?.cidade?.trim();
-        const cidadesRequisito = (requisitosVaga?.cidades || '').trim();
+        const cidadeCandidato = normalizeCity(dados_estruturados?.pessoal?.cidade?.trim());
+        const cidadesRequisito = (requisitosVaga?.cidades || '').trim()
+          .split(',')
+          .map(c => normalizeCity(c));
+        // Verificação de cidade (primeiro compara normalizado)
+        const cidadeCandidatoNorm = normalizeCity(cidadeCandidato);
+        const cidadesRequisitoStr = typeof cidadesRequisito === 'string' ? cidadesRequisito : '';
+        const cidadesRequisitoNorm = cidadesRequisitoStr
+          .split(',')
+          .map(c => normalizeCity(c));
         let cidadeValida = false;
-        if (cidadeCandidato && cidadesRequisito) {
-          // Prompt para IA decidir se a cidade do candidato é compatível
-          const promptCidade = `A cidade do candidato é: "${cidadeCandidato}". As cidades permitidas para a vaga são: [${cidadesRequisito}].
-Responda apenas com SIM ou NÃO: A cidade do candidato corresponde a alguma das cidades permitidas, considerando possíveis erros de digitação, variações ou abreviações?`;
-          try {
-            const respostaCidade = await analisarCandidatura({ ...response, prompt_custom: promptCidade }, null);
-            const respostaStr = (typeof respostaCidade === 'string' ? respostaCidade : respostaCidade?.choices?.[0]?.message?.content || '').toLowerCase();
-            if (respostaStr.includes('sim')) cidadeValida = true;
-          } catch (e) {
-            console.error('Erro na análise IA de cidade:', e.message);
+        if (cidadeCandidatoNorm && cidadesRequisitoNorm.length > 0) {
+          if (cidadesRequisitoNorm.some(c => c === cidadeCandidatoNorm)) {
+            cidadeValida = true;
+          } else {
+            // Só aqui chama a IA para casos realmente ambíguos
+            const promptCidade = `A cidade do candidato é: "${cidadeCandidato}". As cidades permitidas para a vaga são: [${cidadesRequisito}].\nConsidere variações, abreviações, siglas de estado, erros leves de digitação, acentuação e espaços. Responda apenas com SIM ou NÃO: A cidade do candidato corresponde a alguma das cidades permitidas?`;
+            try {
+              const respostaCidade = await analisarCandidatura({ ...response, prompt_custom: promptCidade }, null);
+              const respostaStr = (typeof respostaCidade === 'string' ? respostaCidade : respostaCidade?.choices?.[0]?.message?.content || '').toLowerCase();
+              if (respostaStr.includes('sim')) cidadeValida = true;
+            } catch (e) {
+              console.error('Erro na análise IA de cidade:', e.message);
+            }
           }
         } else {
           cidadeValida = true; // Se não há cidade informada ou cidades permitidas, não bloqueia
         }
         if (!cidadeValida) {
-          console.log(`🚫 ${index + 1}/${responses.length} Cidade '${cidadeCandidato}' não reconhecida como permitida pela IA para a vaga '${vaga_nome}'. Pulando candidato ${response.response_id}`);
+          console.log(`🚫 ${index + 1}/${responses.length} Cidade '${cidadeCandidato}' não reconhecida como permitida para a vaga '${vaga_nome}'. Pulando candidato ${response.response_id}`);
           continue;
         }
         // Montar prompt para IA
         let prompt = '';
         if (requisitosVaga) {
-          prompt = `Vaga: ${vaga_nome}\nRequisitos obrigatórios: ${requisitosVaga.requisito || '-'}\nDiferenciais: ${requisitosVaga.diferencial || '-'}\n\nDados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+          prompt = `Vaga: ${vaga_nome}\nRequisitos: ${requisitosVaga.requisito}\nDiferenciais: ${requisitosVaga.diferencial}\nCidades: ${requisitosVaga.cidades}\n\nResposta do candidato sobre CNH: "${respostaCNH}"\n`;
+          if (exigeCNH) {
+            prompt += `IMPORTANTE: Se a vaga exige CNH (qualquer categoria) e o candidato não possui CNH, informe isso claramente na análise, mas mantenha a pontuação de aderência normalmente.\n`;
+          }
           if (caminhoCurriculo) {
             prompt += `\nCurrículo: (arquivo em ${caminhoCurriculo})`;
           }
@@ -204,7 +272,7 @@ Responda apenas com SIM ou NÃO: A cidade do candidato corresponde a alguma das 
           nome = nomeValido(nomeTypeform) ? nomeTypeform : 'Não identificado';
         }
         // Salvar no banco
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('candidaturas')
           .upsert({
             response_id: response.response_id,
@@ -217,7 +285,11 @@ Responda apenas com SIM ou NÃO: A cidade do candidato corresponde a alguma das 
             status: response.status || 'Analisado por IA',
             nome
           }, { onConflict: 'response_id' });
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Erro ao salvar no Supabase:', error.message);
+        } else {
+          console.log('✅ Salvo no Supabase:', data);
+        }
         console.log(`✅ ${index + 1}/${responses.length} Processado: ${response.response_id}`);
       } catch (error) {
         console.error(`⚠️ Erro no processamento da candidatura ${response.response_id}:`, error.message);

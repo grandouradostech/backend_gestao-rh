@@ -139,7 +139,7 @@ Diferenciais: ${requisitosVaga.diferencial || '-'}
     // Chamar IA (usando função existente, mas passando prompt customizado)
     let analise = null;
     try {
-      analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo);
+      analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo, requisitosVaga);
     } catch (e) {
       console.error('Erro na análise IA:', e.message);
     }
