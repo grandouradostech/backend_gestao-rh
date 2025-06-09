@@ -115,16 +115,12 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
       curriculo: textoCurriculo
     }));
 
-    // Novo prompt super robusto
-    let prompt = '';
-    // Estruturar requisitos e diferenciais como arrays
     let requisitosArr = [];
     let diferenciaisArr = [];
     let descricaoVaga = '';
     let tituloVaga = '';
     let cidadesArr = [];
     if (requisitosVaga) {
-      // Tenta converter requisitos e diferenciais em arrays
       if (typeof requisitosVaga.requisito === 'string') {
         requisitosArr = requisitosVaga.requisito.split(',').map(r => r.trim()).filter(Boolean);
       } else if (Array.isArray(requisitosVaga.requisito)) {
@@ -143,13 +139,46 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
       descricaoVaga = requisitosVaga.descricao || '';
       tituloVaga = requisitosVaga.vaga_nome || requisitosVaga.titulo || '';
     }
-    prompt = `Você é um especialista em recrutamento e seleção.\nSua tarefa é analisar um candidato para uma vaga, com base nas informações abaixo, e fornecer sua análise exclusivamente no formato JSON.\n\n---\nREGRAS E LÓGICA DA ANÁLISE\n\n1. Considere apenas os requisitos e diferenciais explicitamente listados na vaga (veja o campo requisitos_da_vaga abaixo).\n   - Não penalize o candidato por informações pessoais (como estado civil, filhos, etc.) a menos que estejam nos requisitos.\n   - Ignore informações que não estejam relacionadas aos requisitos ou diferenciais da vaga.\n2. Requisitos obrigatórios devem ter peso maior na pontuação.\n   - Se o candidato não atender a um requisito obrigatório, isso deve impactar fortemente a nota.\n   - Diferenciais servem apenas para agregar pontos, nunca para descontar.\n3. Se faltar informação para algum requisito obrigatório, mencione isso na análise e desconte pontos apenas se a ausência impedir a avaliação do requisito.\n4. Baseie-se apenas em evidências: não presuma ou invente informações. Todas as análises devem ser baseadas nos dados fornecidos.\n5. Pontuação:\n   - Para o campo \"pontuacao_final\", gere um número de 0 a 100, considerando a aderência do candidato aos requisitos obrigatórios e diferenciais.\n   - Explique claramente como chegou a essa nota.\n6. Justificativa estruturada:\n   - Liste em um array os motivos de desconto de pontos (por requisito não atendido ou informação ausente).\n   - Liste em outro array os motivos de bônus (por diferenciais atendidos).\n   - Além disso, forneça um texto livre resumindo a justificativa.\n7. Recomendação:\n   - Use a pontuação final como base:\n     - De 0 a 40: \"Não Recomendado\"\n     - De 41 a 70: \"Recomendado\"\n     - De 71 a 100: \"Altamente Recomendado\"\n8. Perguntas para entrevista:\n   - Gere perguntas focadas nos pontos fracos, dúvidas ou inconsistências identificadas nas respostas do candidato.\n9. Formato de resposta:\n   - Sua resposta final deve ser APENAS o código JSON, sem nenhum texto introdutório ou final.\n\n---\nDADOS_DO_CANDIDATO:\n${dadosSanitized}\n\nREQUISITOS_DA_VAGA:\n${JSON.stringify({
-      titulo: tituloVaga,
-      descricao: descricaoVaga,
-      requisitos: requisitosArr,
-      diferenciais: diferenciaisArr,
-      cidades: cidadesArr
-    })}`;
+
+    console.log('DEBUG - requisitosArr:', requisitosArr);
+    console.log('DEBUG - diferenciaisArr:', diferenciaisArr);
+    console.log('DEBUG - tituloVaga:', tituloVaga);
+    console.log('DEBUG - vaga_nome extraído:', tituloVaga);
+
+    let prompt = '';
+    if (requisitosArr.length > 0) {
+      prompt = `Você é um especialista em recrutamento e seleção. Analise o candidato abaixo com base nos requisitos da vaga e responda estritamente em formato JSON com o seguinte esquema:
+{
+  "compatibilidade": "baixa | média | alta",
+  "justificativa": "Texto explicando a análise",
+  "recomendado": true | false
+}
+
+--- DADOS_DO_CANDIDATO:
+${dadosSanitized}
+
+--- REQUISITOS_DA_VAGA:
+${JSON.stringify({
+  titulo: tituloVaga,
+  descricao: descricaoVaga,
+  requisitos: requisitosArr,
+  diferenciais: diferenciaisArr,
+  cidades: cidadesArr
+})}
+`;
+    } else {
+      prompt = `Você é um especialista em recrutamento e seleção. Com base apenas nos dados fornecidos do candidato abaixo, avalie se ele parece adequado para uma vaga em geral. Responda estritamente em formato JSON com o seguinte esquema:
+{
+  "compatibilidade": "baixa | média | alta",
+  "justificativa": "Texto explicando a análise",
+  "recomendado": true | false
+}
+
+--- DADOS_DO_CANDIDATO:
+${dadosSanitized}
+`;
+
+    }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo-0125",
@@ -172,7 +201,6 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
         const repaired = jsonrepair(validAnalysis);
         return JSON.parse(repaired);
       } catch (err2) {
-        console.error('Erro ao reparar/parsear JSON da IA:', error.message, '\nResposta crua:', rawAnalysis);
         return {
           error: "Erro na análise",
           details: error.message,
@@ -182,12 +210,7 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
     }
   } catch (error) {
     console.error('🔍 Erro na análise da candidatura:', error.message);
-    if (typeof rawAnalysis !== 'undefined') {
-    }
-    return { 
-      error: "Erro na análise",
-      details: error.message
-    };
+    return { error: "Erro na análise", details: error.message };
   }
 }
 

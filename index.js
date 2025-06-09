@@ -88,6 +88,14 @@ function onlyGestor(req, res, next) {
   next();
 }
 
+// Função para padronizar nome da vaga (igual frontend)
+function padronizarVaga(vaga) {
+  let v = (vaga || '').normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase().trim();
+  if (v === 'auxiliar de entrega' || v === 'auxiliar de distribuicao') v = 'auxiliar de distribuicao';
+  if (v === 'motorista de entrega' || v === 'motorista de distribuicao') v = 'motorista de distribuicao';
+  return v;
+}
+
 // Rota para receber webhook do Typeform (multi-formulário, análise IA completa)
 app.post('/typeform-webhook', async (req, res) => {
   try {
@@ -108,24 +116,94 @@ app.post('/typeform-webhook', async (req, res) => {
     } catch (e) {
       console.error('Erro ao estruturar dados:', e.message);
     }
-    // Buscar requisitos da vaga
+    // Buscar requisitos da vaga (busca robusta)
     let vaga_nome = dados_estruturados?.profissional?.vaga || null;
+    // Log todos os campos do Typeform para debug
+    if (Array.isArray(response.answers)) {
+      console.log('DEBUG - Campos do Typeform (answers):');
+      response.answers.forEach(ans => {
+        const label = ans.choice?.label || ans.text || ans.value || ans.email || ans.phone_number || '';
+        console.log('  field.id:', ans.field?.id, '| type:', ans.type, '| label:', label);
+      });
+    }
+    // Fallback: tenta extrair direto das respostas do Typeform se não encontrar
+    if (!vaga_nome && Array.isArray(response.answers)) {
+      // Mapeamento de form_id para o ID do campo de vaga
+      const formVagaIds = {
+        'ynFUyrAc': 'JNuaMlqdlJkT',
+        'OejwZ32V': 'GB6CVSJIEGh4',
+        'i6GB06nW': 'wti4gxqjlwXP'
+      };
+      const campoVagaId = formVagaIds[response.form_id];
+      // 1. Tenta pelo ID específico do formulário
+      let vagaField = response.answers.find(ans =>
+        ans.field && ans.field.id === campoVagaId
+      );
+      // 2. Se não achou, tenta por ref ou label contendo 'vaga' ou 'cargo'
+      if (!vagaField) {
+        vagaField = response.answers.find(ans =>
+          ans.field &&
+          (
+            (ans.field.ref && ans.field.ref.toLowerCase().includes('vaga')) ||
+            (ans.field.label && ans.field.label.toLowerCase().includes('vaga')) ||
+            (ans.field.ref && ans.field.ref.toLowerCase().includes('cargo')) ||
+            (ans.field.label && ans.field.label.toLowerCase().includes('cargo'))
+          )
+        );
+      }
+      // 3. Se ainda não achou, tenta pegar o primeiro multiple_choice com valor típico de vaga
+      if (!vagaField) {
+        const possiveisVagas = [
+          'motorista', 'auxiliar', 'entrega', 'distribuição', 'distribuicao', 'administrativo', 'vendedor', 'assistente', 'depósito', 'deposito', 'financeiro'
+        ];
+        vagaField = response.answers.find(ans =>
+          ans.type === 'choice' &&
+          ans.choice &&
+          possiveisVagas.some(v => ans.choice.label && ans.choice.label.toLowerCase().includes(v))
+        );
+      }
+      // 4. Se ainda não achou, pega o primeiro campo choice.label que não seja cidade, escolaridade, estado civil, filhos, etc.
+      if (!vagaField) {
+        const ignorar = ['cidade', 'escolaridade', 'estado civil', 'filho', 'idade', 'tempo', 'salário', 'salario', 'peso', 'altura', 'mora', 'transporte', 'experiência', 'experiencia', 'anos', 'min', 'proprio', 'pretensão', 'pretensao', 'currículo', 'curriculo', 'email', 'telefone', 'cpf'];
+        vagaField = response.answers.find(ans =>
+          ans.type === 'choice' &&
+          ans.choice &&
+          !ignorar.some(word => ans.choice.label && ans.choice.label.toLowerCase().includes(word))
+        );
+      }
+      // 5. Extrai o valor
+      if (vagaField) {
+        vaga_nome = vagaField.choice?.label || vagaField.text || vagaField.value || '';
+      }
+    }
+    let vaga_pad = padronizarVaga(vaga_nome);
+    console.log('DEBUG - vaga_nome extraído:', vaga_nome, '| vaga_pad:', vaga_pad);
     let requisitosVaga = null;
-    if (vaga_nome) {
-      const { data: reqs, error: reqsError } = await supabase
+    if (vaga_pad) {
+      const { data: reqsList, error: reqsError } = await supabase
         .from('requisitos')
-        .select('*')
-        .ilike('vaga_nome', `%${vaga_nome}%`)
-        .maybeSingle();
+        .select('*');
       if (reqsError) {
         console.error('Erro ao buscar requisitos:', reqsError.message);
       }
-      requisitosVaga = reqs;
+      if (reqsList && reqsList.length) {
+        reqsList.forEach(r => {
+          console.log('DEBUG - vaga_nome banco:', r.vaga_nome, '| padronizado:', padronizarVaga(r.vaga_nome));
+        });
+        // 1. Busca exata
+        requisitosVaga = reqsList.find(r => padronizarVaga(r.vaga_nome) === vaga_pad);
+        // 2. Se não achou, busca por similaridade (vaga_pad incluso no nome do banco ou vice-versa)
+        if (!requisitosVaga && vaga_pad) {
+          requisitosVaga = reqsList.find(r =>
+            padronizarVaga(r.vaga_nome).includes(vaga_pad) || vaga_pad.includes(padronizarVaga(r.vaga_nome))
+          );
+        }
+      }
     }
     // Montar prompt para IA
     let prompt = '';
     if (requisitosVaga) {
-      prompt = `Vaga: ${vaga_nome}
+      prompt = `Vaga: ${vaga_pad}
 Requisitos obrigatórios: ${requisitosVaga.requisito || '-'}
 Diferenciais: ${requisitosVaga.diferencial || '-'}
 \nDados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
@@ -449,20 +527,33 @@ app.post('/usuarios', auth, onlyGestor, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Endpoint para listar vagas com data de abertura
-app.get('/vagas', (req, res) => {
-  const vagasPath = path.join(__dirname, 'vagas.json');
-  fs.readFile(vagasPath, 'utf8', (err, data) => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro ao ler vagas.json' });
+// ENDPOINT DE VAGAS (agora dinâmico, busca na tabela requisitos)
+app.get('/vagas', async (req, res) => {
+  try {
+    // Busca todas as vagas distintas da tabela requisitos
+    const { data, error } = await supabase
+      .from('requisitos')
+      .select('vaga_nome, requisito, diferencial, cidades')
+      .order('vaga_nome', { ascending: true });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Agrupa por vaga_nome
+    const vagas = {};
+    for (const r of data) {
+      if (!vagas[r.vaga_nome]) {
+        vagas[r.vaga_nome] = {
+          titulo: r.vaga_nome,
+          requisitos: r.requisito ? r.requisito.split(',').map(s => s.trim()) : [],
+          diferenciais: r.diferencial ? r.diferencial.split(',').map(s => s.trim()) : [],
+          cidades: r.cidades ? r.cidades.split(',').map(s => s.trim()) : []
+        };
+      }
     }
-    try {
-      const vagas = JSON.parse(data);
-      res.json(vagas);
-    } catch (e) {
-      res.status(500).json({ error: 'Erro ao parsear vagas.json' });
-    }
-  });
+    res.json(vagas);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar vagas' });
+  }
 });
 
 // Endpoint para remover candidato
