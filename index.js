@@ -116,6 +116,17 @@ app.post('/typeform-webhook', async (req, res) => {
     } catch (e) {
       console.error('Erro ao estruturar dados:', e.message);
     }
+    // Extrair e-mail e telefone diretamente dos campos do Typeform
+    function extrairCampoTypeform(answers, tipo) {
+      const campo = Array.isArray(answers) ? answers.find(ans => ans.type === tipo) : null;
+      return campo ? (tipo === 'email' ? campo.email : campo.phone_number) : '';
+    }
+    const emailDireto = extrairCampoTypeform(response.answers, 'email');
+    const telefoneDireto = extrairCampoTypeform(response.answers, 'phone_number');
+    if (dados_estruturados && dados_estruturados.pessoal) {
+      if (emailDireto) dados_estruturados.pessoal.email = emailDireto;
+      if (telefoneDireto) dados_estruturados.pessoal.telefone = telefoneDireto;
+    }
     // Buscar requisitos da vaga (busca robusta)
     let vaga_nome = dados_estruturados?.profissional?.vaga || null;
     // Log todos os campos do Typeform para debug
@@ -254,7 +265,8 @@ Diferenciais: ${requisitosVaga.diferencial || '-'}
         tem_curriculo: !!caminhoCurriculo,
         updated_at: new Date().toISOString(),
         status: response.status || 'Analisado por IA',
-        nome
+        nome,
+        form_id: formId
       }, { onConflict: 'response_id' });
     if (error) throw error;
     res.status(200).send('Dados salvos com sucesso!');

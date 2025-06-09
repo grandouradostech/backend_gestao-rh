@@ -149,10 +149,12 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
     if (requisitosArr.length > 0) {
       prompt = `Você é um especialista em recrutamento e seleção. Analise o candidato abaixo com base nos requisitos da vaga e responda estritamente em formato JSON com o seguinte esquema:
 {
+  "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
   "compatibilidade": "baixa | média | alta",
   "justificativa": "Texto explicando a análise",
   "recomendado": true | false
 }
+IMPORTANTE: SEMPRE inclua o campo "pontuacao_final" no JSON, mesmo que a nota seja 0.
 
 --- DADOS_DO_CANDIDATO:
 ${dadosSanitized}
@@ -169,15 +171,16 @@ ${JSON.stringify({
     } else {
       prompt = `Você é um especialista em recrutamento e seleção. Com base apenas nos dados fornecidos do candidato abaixo, avalie se ele parece adequado para uma vaga em geral. Responda estritamente em formato JSON com o seguinte esquema:
 {
+  "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
   "compatibilidade": "baixa | média | alta",
   "justificativa": "Texto explicando a análise",
   "recomendado": true | false
 }
+IMPORTANTE: SEMPRE inclua o campo "pontuacao_final" no JSON, mesmo que a nota seja 0.
 
 --- DADOS_DO_CANDIDATO:
 ${dadosSanitized}
 `;
-
     }
 
     const completion = await openai.chat.completions.create({
