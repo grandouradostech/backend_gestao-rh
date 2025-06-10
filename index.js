@@ -848,6 +848,23 @@ app.delete('/requisitos/:id', async (req, res) => {
     res.status(500).json({ error: 'Erro ao remover requisito' });
   }
 });
+// Editar requisito, diferencial ou atividades
+app.patch('/requisitos/:id', async (req, res) => {
+  const { id } = req.params;
+  const { tipo, valor } = req.body;
+  if (!['requisito', 'diferencial', 'atividades'].includes(tipo)) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
+  const updateObj = {};
+  updateObj[tipo] = valor;
+  const { data, error } = await supabase
+    .from('requisitos')
+    .update(updateObj)
+    .eq('id', id)
+    .select();
+  if (error || !data || !data[0]) return res.status(500).json({ error: error?.message || 'Não encontrado' });
+  res.json(data[0]);
+});
 
 // --- ANOTAÇÕES DO GESTOR ---
 
