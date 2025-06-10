@@ -862,6 +862,7 @@ app.patch('/requisitos/:id', async (req, res) => {
     .update(updateObj)
     .eq('id', id)
     .select();
+  console.log('[DEBUG][PATCH /requisitos/:id]', 'id:', id, 'tipo:', tipo, 'valor:', valor, 'data:', data, 'error:', error);
   if (error || !data || !data[0]) return res.status(500).json({ error: error?.message || 'Não encontrado' });
   res.json(data[0]);
 });

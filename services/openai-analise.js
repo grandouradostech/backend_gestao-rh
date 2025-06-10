@@ -22,6 +22,20 @@ function sanitizarTexto(texto) {
     .replace(/\r/g, '\\r');
 }
 
+function extrairRequisitosCriticos(requisitos) {
+  const palavrasChaveCriticas = [
+    'cnh', 'transporte de cargas', 'ear', 'experiência na função', 'experiência mínima',
+    'disponibilidade', 'ensino fundamental', 'ensino médio', 'ensino superior',
+    'aptidão física', 'dirigir em rodovias', 'carro próprio', 'idade'
+  ];
+
+  return requisitos.filter(req =>
+    palavrasChaveCriticas.some(palavra =>
+      req.toLowerCase().includes(palavra)
+    )
+  );
+}
+
 async function processarCurriculo(responseId) {
   try {
     const { data: arquivos, error } = await supabase.storage
@@ -140,43 +154,54 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
       tituloVaga = requisitosVaga.vaga_nome || requisitosVaga.titulo || '';
     }
 
-    console.log('DEBUG - requisitosArr:', requisitosArr);
-    console.log('DEBUG - diferenciaisArr:', diferenciaisArr);
-    console.log('DEBUG - tituloVaga:', tituloVaga);
-    console.log('DEBUG - vaga_nome extraído:', tituloVaga);
+    const requisitosObrigatorios = extrairRequisitosCriticos(requisitosArr);
 
     let prompt = '';
     if (requisitosArr.length > 0) {
-      prompt = `Você é um especialista em recrutamento e seleção. Analise o candidato abaixo com base nos requisitos da vaga e responda estritamente em formato JSON com o seguinte esquema:
-    {
-      "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
-      "compatibilidade": "baixa | média | alta",
-      "justificativa": "Texto explicando a análise",
-      "recomendado": true | false
-    }
-    IMPORTANTE: SEMPRE inclua o campo "pontuacao_final" no JSON, mesmo que a nota seja 0.
+      prompt = `Você é um especialista em recrutamento e seleção. Avalie o candidato abaixo com base nas informações fornecidas e nos requisitos da vaga, seguindo estas regras:
 
-    --- DADOS_DO_CANDIDATO:
-    ${dadosSanitized}
+1. Requisitos marcados como obrigatórios são ESSENCIAIS. Se o candidato não atender a qualquer um deles e não houver justificativa plausível, a pontuação deve ser baixa (abaixo de 60) e "recomendado" deve ser false.
+2. Níveis mais altos de escolaridade atendem automaticamente aos níveis mais baixos.
+3. Considere experiências similares, mesmo que não sejam exatamente na função. Atividades informais ou voluntárias relacionadas contam parcialmente.
+4. Caso o currículo esteja ausente, baseie-se apenas nas respostas do formulário.
+5. Falta de informação (como CNH, rotas locais, disponibilidade) deve ser citada como ponto fraco se for relevante.
 
-    --- REQUISITOS_DA_VAGA:
-    ${JSON.stringify({
-      titulo: tituloVaga,
-      descricao: descricaoVaga,
-      requisitos: requisitosArr,
-      diferenciais: diferenciaisArr,
-      cidades: cidadesArr
-    })}
-    `;
-    } else {
-      prompt = `Você é um especialista em recrutamento e seleção. Com base apenas nos dados fornecidos do candidato abaixo, avalie se ele parece adequado para uma vaga em geral. Responda estritamente em formato JSON com o seguinte esquema:
+Responda estritamente em formato JSON com o seguinte esquema:
 {
   "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
-  "compatibilidade": "baixa | média | alta",
-  "justificativa": "Texto explicando a análise",
-  "recomendado": true | false
+  "compatibilidade": "baixa" | "média" | "alta",
+  "justificativa": "Texto explicando a análise (em linguagem objetiva e clara)",
+  "recomendado": true | false,
+  "pontos_fortes": [lista de pontos fortes],
+  "pontos_fracos": [lista de pontos fracos ou ausências de informação]
 }
-IMPORTANTE: SEMPRE inclua o campo "pontuacao_final" no JSON, mesmo que a nota seja 0.
+
+--- DADOS_DO_CANDIDATO:
+${dadosSanitized}
+
+--- REQUISITOS_DA_VAGA:
+${JSON.stringify({
+  titulo: tituloVaga,
+  descricao: descricaoVaga,
+  requisitos: requisitosArr,
+  diferenciais: diferenciaisArr,
+  cidades: cidadesArr
+})}
+
+--- REQUISITOS_OBRIGATORIOS:
+${JSON.stringify(requisitosObrigatorios)}
+`;
+    } else {
+      prompt = `Você é um especialista em recrutamento e seleção. Com base apenas nos dados fornecidos do candidato abaixo, avalie se ele parece adequado para uma vaga em geral. Use bom senso e responda estritamente no seguinte formato JSON:
+
+{
+  "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
+  "compatibilidade": "baixa" | "média" | "alta",
+  "justificativa": "Texto explicando a análise (em linguagem objetiva e clara)",
+  "recomendado": true | false,
+  "pontos_fortes": [lista de pontos fortes],
+  "pontos_fracos": [lista de pontos fracos ou ausências de informação]
+}
 
 --- DADOS_DO_CANDIDATO:
 ${dadosSanitized}
