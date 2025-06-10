@@ -816,7 +816,7 @@ app.use((req, res, next) => {
 // Listar requisitos
 app.get('/requisitos', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('requisitos').select('id, vaga_nome, requisito, diferencial, cidades').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('requisitos').select('id, vaga_nome, requisito, diferencial, cidades, atividades').order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
