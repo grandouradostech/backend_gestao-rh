@@ -46,7 +46,7 @@ async function processarCurriculo(responseId) {
 
     const arquivo = arquivos[0];
     const caminho = `${responseId}/${arquivo.name}`;
-    
+
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('curriculo')
       .download(caminho);
@@ -60,7 +60,7 @@ async function processarCurriculo(responseId) {
       const { data: { text } } = await Tesseract.recognize(buffer, 'por');
       return sanitizarTexto(text.substring(0, 2000));
     }
-    
+
     if (arquivo.name.endsWith('.pdf')) {
       const data = await pdf(buffer);
       return sanitizarTexto(data.text.substring(0, 2000));
@@ -76,7 +76,7 @@ async function processarCurriculo(responseId) {
 async function estruturarDados(response) {
   try {
     const answersSanitized = sanitizarTexto(JSON.stringify(response.answers));
-    
+
     const prompt = `Estruture estes dados de formulário em JSON válido:
     {
       "pessoal": {
@@ -96,7 +96,7 @@ async function estruturarDados(response) {
     Dados brutos: ${answersSanitized}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo-0125",
+      model: "gpt-4o",
       messages: [{ role: "system", content: prompt }],
       temperature: 0.1,
       max_tokens: 500,
@@ -107,8 +107,7 @@ async function estruturarDados(response) {
     const validJSON = rawJSON
       .replace(/\\\"/g, '"')
       .replace(/'/g, '"')
-      .replace(/}\s*{/g, '},{')
-      .replace(/,\s*}/g, '}');
+      .replace(/},\s*}/g, '}}');
 
     return JSON.parse(validJSON);
   } catch (error) {
@@ -135,45 +134,52 @@ async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = 
     let tituloVaga = '';
     let cidadesArr = [];
     if (requisitosVaga) {
-      if (typeof requisitosVaga.requisito === 'string') {
-        requisitosArr = requisitosVaga.requisito.split(',').map(r => r.trim()).filter(Boolean);
-      } else if (Array.isArray(requisitosVaga.requisito)) {
-        requisitosArr = requisitosVaga.requisito;
-      }
-      if (typeof requisitosVaga.diferencial === 'string') {
-        diferenciaisArr = requisitosVaga.diferencial.split(',').map(d => d.trim()).filter(Boolean);
-      } else if (Array.isArray(requisitosVaga.diferencial)) {
-        diferenciaisArr = requisitosVaga.diferencial;
-      }
-      if (typeof requisitosVaga.cidades === 'string') {
-        cidadesArr = requisitosVaga.cidades.split(',').map(c => c.trim()).filter(Boolean);
-      } else if (Array.isArray(requisitosVaga.cidades)) {
-        cidadesArr = requisitosVaga.cidades;
-      }
+      requisitosArr = Array.isArray(requisitosVaga.requisito)
+        ? requisitosVaga.requisito
+        : requisitosVaga.requisito?.split(',').map(r => r.trim()).filter(Boolean) || [];
+
+      diferenciaisArr = Array.isArray(requisitosVaga.diferencial)
+        ? requisitosVaga.diferencial
+        : requisitosVaga.diferencial?.split(',').map(d => d.trim()).filter(Boolean) || [];
+
+      cidadesArr = Array.isArray(requisitosVaga.cidades)
+        ? requisitosVaga.cidades
+        : requisitosVaga.cidades?.split(',').map(c => c.trim()).filter(Boolean) || [];
+
       descricaoVaga = requisitosVaga.descricao || '';
       tituloVaga = requisitosVaga.vaga_nome || requisitosVaga.titulo || '';
     }
 
     const requisitosObrigatorios = extrairRequisitosCriticos(requisitosArr);
 
-    let prompt = '';
-    if (requisitosArr.length > 0) {
-      prompt = `Você é um especialista em recrutamento e seleção. Avalie o candidato abaixo com base nas informações fornecidas e nos requisitos da vaga, seguindo estas regras:
+    const prompt = `Você é um especialista em recrutamento e seleção. Avalie o candidato abaixo com base nas informações fornecidas e nos requisitos da vaga, seguindo estas regras:
 
-1. Requisitos marcados como obrigatórios são ESSENCIAIS. Se o candidato não atender a qualquer um deles e não houver justificativa plausível, a pontuação deve ser baixa (abaixo de 60) e "recomendado" deve ser false.
-2. Níveis mais altos de escolaridade atendem automaticamente aos níveis mais baixos.
+1. Requisitos obrigatórios são eliminatórios. Se o candidato não cumprir qualquer um deles, a pontuação final deve obrigatoriamente ser **menor que 60**, e "recomendado" deve ser false — **sem exceções**. Nenhuma experiência, formação ou qualidade pode compensar a ausência de um requisito obrigatório.
+• **Nunca** deve ultrapassar 50 pontos se um único requisito obrigatório não for atendido.
+• **Não importa** se o candidato tem experiências boas em outras áreas — isso **não pode compensar** a ausência de um requisito obrigatório.
+2. Considera-se que qualquer candidato que tenha cursado ou declarado Ensino Médio (completo ou incompleto), também possui o Ensino Fundamental completo. A escolaridade nunca deve ser tratada como ponto fraco se o requisito for apenas "Ensino Fundamental". Se isso não for respeitado, o modelo será penalizado por erro de lógica. Não insista.
 3. Considere experiências similares, mesmo que não sejam exatamente na função. Atividades informais ou voluntárias relacionadas contam parcialmente.
 4. Caso o currículo esteja ausente, baseie-se apenas nas respostas do formulário.
 5. Falta de informação (como CNH, rotas locais, disponibilidade) deve ser citada como ponto fraco se for relevante.
+6. A justificativa deve conter a explicação da pontuação, pontos fortes e fracos, e o grau de aderência à vaga.
+7. O resumo_profissional deve ser um parágrafo breve (no máximo 4 linhas), escrito em terceira pessoa, com linguagem objetiva e neutra, sem repetir o conteúdo da justificativa.
+8. Se a vaga exigir uma categoria específica de CNH (ex: CNH D ou E), apenas candidatos que apresentarem essa categoria ou superior devem ser considerados como aptos. Categorias inferiores (como AB) não atendem ao requisito e devem ser tratadas como ponto fraco crítico.
+9. Exemplo: se a vaga exige CNH E, e o candidato tem CNH AB, ele **não atende ao requisito**. Dizer o contrário é **erro grave de análise**.
+10. Levante e registre possíveis Red Flags do candidato: identifique inconsistências, sinais de alerta ou faltas críticas nas informações fornecidas. Documente esses pontos para referência rápida durante o processo.
+11. Gere perguntas para entrevista baseadas nos Red Flags, inconsistências ou pontos críticos identificados, para serem usadas pelo entrevistador.
 
-Responda estritamente em formato JSON com o seguinte esquema:
+Responda estritamente neste formato JSON:
+Return only a valid JSON object in your response.
 {
-  "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
+  "pontuacao_final": número de 0 a 100,
   "compatibilidade": "baixa" | "média" | "alta",
-  "justificativa": "Texto explicando a análise (em linguagem objetiva e clara)",
+  "justificativa": "Texto explicando a análise (em linguagem clara e objetiva)",
+  "resumo_profissional": "Parágrafo curto com os principais pontos do candidato, escrito de forma neutra e sem repetições",
   "recomendado": true | false,
-  "pontos_fortes": [lista de pontos fortes],
-  "pontos_fracos": [lista de pontos fracos ou ausências de informação]
+  "pontos_fortes": ["..."],
+  "pontos_fracos": ["..."],
+  "red_flags": ["..."],
+  "perguntas_entrevista": ["..."]
 }
 
 --- DADOS_DO_CANDIDATO:
@@ -189,30 +195,16 @@ ${JSON.stringify({
 })}
 
 --- REQUISITOS_OBRIGATORIOS:
-${JSON.stringify(requisitosObrigatorios)}
-`;
-    } else {
-      prompt = `Você é um especialista em recrutamento e seleção. Com base apenas nos dados fornecidos do candidato abaixo, avalie se ele parece adequado para uma vaga em geral. Use bom senso e responda estritamente no seguinte formato JSON:
-
-{
-  "pontuacao_final": número de 0 a 100 (obrigatório, nunca omita),
-  "compatibilidade": "baixa" | "média" | "alta",
-  "justificativa": "Texto explicando a análise (em linguagem objetiva e clara)",
-  "recomendado": true | false,
-  "pontos_fortes": [lista de pontos fortes],
-  "pontos_fracos": [lista de pontos fracos ou ausências de informação]
-}
-
---- DADOS_DO_CANDIDATO:
-${dadosSanitized}
-`;
-    }
+${JSON.stringify(requisitosObrigatorios)}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo-0125",
-      messages: [{ role: "system", content: prompt }],
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "Você é um especialista em triagem de currículos para processos seletivos. Siga as instruções do prompt rigorosamente." },
+        { role: "user", content: prompt }
+      ],
       temperature: 0.1,
-      max_tokens: 500,
+      max_tokens: 1000,
       response_format: { type: "json_object" }
     });
 

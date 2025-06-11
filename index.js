@@ -927,6 +927,54 @@ app.delete('/anotacoes/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint para atualizar nome do candidato
+app.patch('/candidaturas/:response_id/nome', async (req, res) => {
+  const { response_id } = req.params;
+  const { novo_nome } = req.body;
+  try {
+    const { data: candidato, error } = await supabase
+      .from('candidaturas')
+      .select('dados_estruturados')
+      .eq('response_id', response_id)
+      .single();
+    if (error || !candidato) return res.status(404).json({ error: 'Candidato não encontrado' });
+    const dados = candidato.dados_estruturados || {};
+    if (!dados.pessoal) dados.pessoal = {};
+    dados.pessoal.nome = novo_nome;
+    await supabase
+      .from('candidaturas')
+      .update({ dados_estruturados: dados, updated_at: new Date().toISOString() })
+      .eq('response_id', response_id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar nome' });
+  }
+});
+
+// Endpoint para atualizar telefone do candidato
+app.patch('/candidaturas/:response_id/telefone', async (req, res) => {
+  const { response_id } = req.params;
+  const { novo_telefone } = req.body;
+  try {
+    const { data: candidato, error } = await supabase
+      .from('candidaturas')
+      .select('dados_estruturados')
+      .eq('response_id', response_id)
+      .single();
+    if (error || !candidato) return res.status(404).json({ error: 'Candidato não encontrado' });
+    const dados = candidato.dados_estruturados || {};
+    if (!dados.pessoal) dados.pessoal = {};
+    dados.pessoal.telefone = novo_telefone;
+    await supabase
+      .from('candidaturas')
+      .update({ dados_estruturados: dados, updated_at: new Date().toISOString() })
+      .eq('response_id', response_id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar telefone' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
