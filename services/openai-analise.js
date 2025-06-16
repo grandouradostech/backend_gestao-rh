@@ -3,6 +3,7 @@ const Tesseract = require('tesseract.js');
 const pdf = require('pdf-parse');
 const { createClient } = require('@supabase/supabase-js');
 const { jsonrepair } = require('jsonrepair');
+const sharp = require('sharp');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY
@@ -13,13 +14,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const FORMULARIO_CAMPO_NOME = {
+  'ynFUyrAc': '6VkDMDJph5Jc',
+  'i6GB06nW': 'c0SRbHskERPD',
+  'OejwZ32V': 'w0kqjkpQ8Oav',
+};
+
 function sanitizarTexto(texto) {
-  return texto
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\t/g, '\\t')
-    .replace(/\r/g, '\\r');
+  return texto.replace(/\\/g, '\\\\')
+              .replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n')
+              .replace(/\t/g, '\\t')
+              .replace(/\r/g, '\\r');
 }
 
 function extrairRequisitosCriticos(requisitos) {
@@ -57,13 +63,42 @@ async function processarCurriculo(responseId) {
     const buffer = Buffer.from(arrayBuffer);
 
     if (['jpg', 'jpeg', 'png'].includes(arquivo.name.split('.').pop().toLowerCase())) {
-      const { data: { text } } = await Tesseract.recognize(buffer, 'por');
-      return sanitizarTexto(text.substring(0, 2000));
+      try {
+        // Tenta otimizar a imagem antes do OCR
+        const optimizedBuffer = await sharp(buffer)
+          .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 90 })
+          .toBuffer();
+
+        const { data: { text } } = await Tesseract.recognize(optimizedBuffer, 'por', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              console.log(`[OCR] Progresso: ${Math.round(m.progress * 100)}%`);
+            }
+          }
+        });
+        return sanitizarTexto(text.substring(0, 2000));
+      } catch (ocrError) {
+        console.error('🔧 Erro no OCR:', ocrError.message);
+        // Se falhar no OCR, tenta ler como PDF
+        try {
+          const data = await pdf(buffer);
+          return sanitizarTexto(data.text.substring(0, 2000));
+        } catch (pdfError) {
+          console.error('🔧 Erro ao ler como PDF:', pdfError.message);
+          return null;
+        }
+      }
     }
 
     if (arquivo.name.endsWith('.pdf')) {
-      const data = await pdf(buffer);
-      return sanitizarTexto(data.text.substring(0, 2000));
+      try {
+        const data = await pdf(buffer);
+        return sanitizarTexto(data.text.substring(0, 2000));
+      } catch (pdfError) {
+        console.error('🔧 Erro ao ler PDF:', pdfError.message);
+        return null;
+      }
     }
 
     return null;
@@ -73,7 +108,8 @@ async function processarCurriculo(responseId) {
   }
 }
 
-async function estruturarDados(response) {
+
+async function estruturarDados(response, formId) {
   try {
     const answersSanitized = sanitizarTexto(JSON.stringify(response.answers));
 
@@ -104,16 +140,26 @@ async function estruturarDados(response) {
     });
 
     const rawJSON = completion.choices[0].message.content;
-    const validJSON = rawJSON
-      .replace(/\\\"/g, '"')
-      .replace(/'/g, '"')
-      .replace(/},\s*}/g, '}}');
+    const validJSON = rawJSON.replace(/\\\"/g, '"').replace(/'/g, '"').replace(/},\s*}/g, '}}');
 
     return JSON.parse(validJSON);
   } catch (error) {
     console.error('📄 Erro na estruturação dos dados:', error.message);
     return null;
   }
+}
+
+async function obterNome(response, formId, dadosEstruturados) {
+  const idCampoNome = FORMULARIO_CAMPO_NOME[formId];
+
+  const campoNome = response.answers?.find(a => a.field?.id === idCampoNome) || null;
+  if (campoNome?.text) return campoNome.text;
+
+  const nomeEstruturado = dadosEstruturados?.pessoal?.nome;
+  if (nomeEstruturado && nomeEstruturado.toLowerCase() !== 'texto' && nomeEstruturado.length > 1)
+    return nomeEstruturado;
+
+  return 'Não identificado';
 }
 
 async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = null) {
@@ -235,6 +281,10 @@ ${JSON.stringify(requisitosObrigatorios)}`;
 }
 
 module.exports = {
-  analisarCandidatura,
-  estruturarDados
+  sanitizarTexto,
+  extrairRequisitosCriticos,
+  processarCurriculo,
+  estruturarDados,
+  obterNome,
+  analisarCandidatura
 };

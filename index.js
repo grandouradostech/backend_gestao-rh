@@ -20,8 +20,19 @@ app.use(express.json());
 async function processarAnexos(response, responseId) {
   try {
     console.log('[WEBHOOK] processarAnexos - response:', JSON.stringify(response.answers, null, 2));
-    // Procura o primeiro campo do tipo file_url
-    const campoCurriculo = response.answers.find(a => a.type === 'file_url' && a.file_url);
+    // IDs conhecidos de campo de currículo
+    const IDS_CURRICULO = [
+      '3906df64-4b2f-4d6b-9b86-84a48a329ba2', // padrão
+      'uWyR9IgTXhoc', // i6GB06nW exemplo
+      '3fJBj1zWtR34', // OejwZ32V exemplo
+    ];
+    // Procura o campo de currículo pelo ID conhecido
+    const campoCurriculo = response.answers.find(a =>
+      a.type === 'file_url' &&
+      a.file_url &&
+      a.field &&
+      IDS_CURRICULO.includes(a.field.id)
+    ) || response.answers.find(a => a.type === 'file_url' && a.file_url); // fallback para o antigo
     if (!campoCurriculo) {
       console.log('[WEBHOOK] Campo de currículo não encontrado.');
       return null;
@@ -101,178 +112,81 @@ app.post('/typeform-webhook', async (req, res) => {
   try {
     const response = req.body.form_response || req.body;
     const formId = response.form_id;
-    const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V', 'CSwzgeg5'];
+    const FORM_IDS = ['ynFUyrAc', 'i6GB06nW', 'OejwZ32V'];
+    
     if (!FORM_IDS.includes(formId)) {
       return res.status(400).json({ error: 'form_id não permitido' });
     }
+
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
+    
+    console.log(`[WEBHOOK] Processando resposta do formulário ${formId} (ID: ${responseId})`);
+
     // Processar anexos (currículo)
     const caminhoCurriculo = await processarAnexos(response, responseId);
+    
     // Estruturar dados
     let dados_estruturados = null;
     try {
       dados_estruturados = await estruturarDados(response);
     } catch (e) {
-      console.error('Erro ao estruturar dados:', e.message);
+      console.error('[WEBHOOK] Erro ao estruturar dados:', e.message);
     }
-    // Extrair e-mail e telefone diretamente dos campos do Typeform
-    function extrairCampoTypeform(answers, tipo) {
-      const campo = Array.isArray(answers) ? answers.find(ans => ans.type === tipo) : null;
-      return campo ? (tipo === 'email' ? campo.email : campo.phone_number) : '';
-    }
-    const emailDireto = extrairCampoTypeform(response.answers, 'email');
-    const telefoneDireto = extrairCampoTypeform(response.answers, 'phone_number');
-    if (dados_estruturados && dados_estruturados.pessoal) {
-      if (emailDireto) dados_estruturados.pessoal.email = emailDireto;
-      if (telefoneDireto) dados_estruturados.pessoal.telefone = telefoneDireto;
-    }
-    // Buscar requisitos da vaga (busca robusta)
+
+    // Extrair campos usando o mesmo MAPA_CAMPOS do importar-candidaturas
+    const nome = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'nome') || 'Não identificado';
+    const cpf = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'cpf');
+    const telefone = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'telefone');
+    const email = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'email');
+
+    if (!dados_estruturados.pessoal) dados_estruturados.pessoal = {};
+    dados_estruturados.pessoal.nome = nome;
+    dados_estruturados.pessoal.cpf = cpf;
+    dados_estruturados.pessoal.telefone = telefone;
+    dados_estruturados.pessoal.email = email;
+
+    // Buscar requisitos da vaga
     let vaga_nome = dados_estruturados?.profissional?.vaga || null;
-    // Log todos os campos do Typeform para debug
-    if (Array.isArray(response.answers)) {
-      console.log('DEBUG - Campos do Typeform (answers):');
-      response.answers.forEach(ans => {
-        const label = ans.choice?.label || ans.text || ans.value || ans.email || ans.phone_number || '';
-        console.log('  field.id:', ans.field?.id, '| type:', ans.type, '| label:', label);
-      });
-    }
-    // Fallback: tenta extrair direto das respostas do Typeform se não encontrar
-    if (!vaga_nome && Array.isArray(response.answers)) {
-      // Mapeamento de form_id para o ID do campo de vaga
-      const formVagaIds = {
-        'ynFUyrAc': 'JNuaMlqdlJkT',
-        'OejwZ32V': 'GB6CVSJIEGh4',
-        'i6GB06nW': 'wti4gxqjlwXP'
-      };
-      const campoVagaId = formVagaIds[response.form_id];
-      // 1. Tenta pelo ID específico do formulário
-      let vagaField = response.answers.find(ans =>
-        ans.field && ans.field.id === campoVagaId
-      );
-      // 2. Se não achou, tenta por ref ou label contendo 'vaga' ou 'cargo'
-      if (!vagaField) {
-        vagaField = response.answers.find(ans =>
-          ans.field &&
-          (
-            (ans.field.ref && ans.field.ref.toLowerCase().includes('vaga')) ||
-            (ans.field.label && ans.field.label.toLowerCase().includes('vaga')) ||
-            (ans.field.ref && ans.field.ref.toLowerCase().includes('cargo')) ||
-            (ans.field.label && ans.field.label.toLowerCase().includes('cargo'))
-          )
-        );
-      }
-      // 3. Se ainda não achou, tenta pegar o primeiro multiple_choice com valor típico de vaga
-      if (!vagaField) {
-        const possiveisVagas = [
-          'motorista', 'auxiliar', 'entrega', 'distribuição', 'distribuicao', 'administrativo', 'vendedor', 'assistente', 'depósito', 'deposito', 'financeiro'
-        ];
-        vagaField = response.answers.find(ans =>
-          ans.type === 'choice' &&
-          ans.choice &&
-          possiveisVagas.some(v => ans.choice.label && ans.choice.label.toLowerCase().includes(v))
-        );
-      }
-      // 4. Se ainda não achou, pega o primeiro campo choice.label que não seja cidade, escolaridade, estado civil, filhos, etc.
-      if (!vagaField) {
-        const ignorar = ['cidade', 'escolaridade', 'estado civil', 'filho', 'idade', 'tempo', 'salário', 'salario', 'peso', 'altura', 'mora', 'transporte', 'experiência', 'experiencia', 'anos', 'min', 'proprio', 'pretensão', 'pretensao', 'currículo', 'curriculo', 'email', 'telefone', 'cpf'];
-        vagaField = response.answers.find(ans =>
-          ans.type === 'choice' &&
-          ans.choice &&
-          !ignorar.some(word => ans.choice.label && ans.choice.label.toLowerCase().includes(word))
-        );
-      }
-      // 5. Extrai o valor
-      if (vagaField) {
-        vaga_nome = vagaField.choice?.label || vagaField.text || vagaField.value || '';
-      }
-    }
-    let vaga_pad = padronizarVaga(vaga_nome);
-    console.log('DEBUG - vaga_nome extraído:', vaga_nome, '| vaga_pad:', vaga_pad);
     let requisitosVaga = null;
-    if (vaga_pad) {
-      const { data: reqsList, error: reqsError } = await supabase
-        .from('requisitos')
-        .select('*');
-      if (reqsError) {
-        console.error('Erro ao buscar requisitos:', reqsError.message);
-      }
-      if (reqsList && reqsList.length) {
-        reqsList.forEach(r => {
-          console.log('DEBUG - vaga_nome banco:', r.vaga_nome, '| padronizado:', padronizarVaga(r.vaga_nome));
-        });
-        // 1. Busca exata
-        requisitosVaga = reqsList.find(r => padronizarVaga(r.vaga_nome) === vaga_pad);
-        // 2. Se não achou, busca por similaridade (vaga_pad incluso no nome do banco ou vice-versa)
-        if (!requisitosVaga && vaga_pad) {
-          requisitosVaga = reqsList.find(r =>
-            padronizarVaga(r.vaga_nome).includes(vaga_pad) || vaga_pad.includes(padronizarVaga(r.vaga_nome))
-          );
-        }
-      }
+
+    if (vaga_nome) {
+      const vaga_normalizada = normalizeText(vaga_nome);
+      const { data: todasVagas } = await supabase.from('requisitos').select('*');
+      requisitosVaga = todasVagas.find(v => normalizeText(v.vaga_nome) === vaga_normalizada);
     }
-    // Montar prompt para IA
-    let prompt = '';
-    if (requisitosVaga) {
-      prompt = `Vaga: ${vaga_pad}
-Requisitos obrigatórios: ${requisitosVaga.requisito || '-'}
-Diferenciais: ${requisitosVaga.diferencial || '-'}
-\nDados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
-      if (caminhoCurriculo) {
-        prompt += `\nCurrículo: (arquivo em ${caminhoCurriculo})`;
-      }
-      prompt += '\nAnalise se o candidato atende a cada requisito e diferencial. Dê um score de 0 a 100 de aderência à vaga e explique brevemente.';
-    } else {
-      prompt = `Dados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}\n`;
+
+    const prompt = requisitosVaga
+      ? `Vaga: ${vaga_nome}\nRequisitos: ${requisitosVaga.requisito}\nDiferenciais: ${requisitosVaga.diferencial}\n${caminhoCurriculo ? `\nCurrículo: ${caminhoCurriculo}` : ''}\nAnalise se o candidato atende aos requisitos. Dê um score de 0 a 100.`
+      : `Dados do candidato:\n${JSON.stringify(dados_estruturados, null, 2)}`;
+
+    console.log('[WEBHOOK] Analisando candidatura...');
+    const analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo, requisitosVaga);
+
+    console.log('[WEBHOOK] Salvando no banco...');
+    const { data: upsertData, error: upsertError } = await supabase.from('candidaturas').upsert({
+      response_id: responseId,
+      raw_data: response,
+      dados_estruturados,
+      analise_ia: analise,
+      curriculo_path: caminhoCurriculo,
+      tem_curriculo: !!caminhoCurriculo,
+      updated_at: new Date().toISOString(),
+      status: response.status || 'Analisado por IA',
+      nome
+    }, { onConflict: 'response_id' });
+
+    if (upsertError) {
+      console.error(`[WEBHOOK] ❌ Erro no upsert response_id ${responseId}:`, upsertError);
+      return res.status(500).json({ error: 'Erro ao salvar candidatura' });
     }
-    // Chamar IA (usando função existente, mas passando prompt customizado)
-    let analise = null;
-    try {
-      analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo, requisitosVaga);
-    } catch (e) {
-      console.error('Erro na análise IA:', e.message);
-    }
-    // Extrair nome do candidato
-    function nomeValido(nome) {
-      if (!nome) return false;
-      if (/^\d{11}$/.test(nome)) return false;
-      if (/^\d{10,}$/.test(nome)) return false;
-      if (nome.toLowerCase() === 'texto') return false;
-      if (nome.length < 2) return false;
-      return true;
-    }
-    let nome = dados_estruturados?.pessoal?.nome || '';
-    if (!nomeValido(nome)) {
-      // Busca nos campos do Typeform
-      let nomeTypeform = null;
-      if (Array.isArray(response.answers)) {
-        const nomeAnswer = response.answers.find(ans => ans.field && (ans.field.id === 'oq4YGUe70Wk6' || ans.field.id === '6VkDMDJph5Jc'));
-        if (nomeAnswer && nomeAnswer.text) {
-          nomeTypeform = nomeAnswer.text;
-        }
-      }
-      nome = nomeValido(nomeTypeform) ? nomeTypeform : 'Não identificado';
-    }
-    // Salvar no Supabase
-    const { error } = await supabase
-      .from('candidaturas')
-      .upsert({
-        response_id: responseId,
-        raw_data: response,
-        dados_estruturados,
-        analise_ia: analise,
-        curriculo_path: caminhoCurriculo,
-        tem_curriculo: !!caminhoCurriculo,
-        updated_at: new Date().toISOString(),
-        status: response.status || 'Analisado por IA',
-        nome,
-        form_id: formId
-      }, { onConflict: 'response_id' });
-    if (error) throw error;
-    res.status(200).send('Dados salvos com sucesso!');
-  } catch (err) {
-    console.error('Erro:', err);
-    res.status(500).send('Erro ao processar os dados');
+
+    console.log(`[WEBHOOK] ✅ Candidatura ${responseId} processada com sucesso`);
+    return res.status(200).json({ success: true, response_id: responseId });
+
+  } catch (error) {
+    console.error('[WEBHOOK] 💥 Erro fatal:', error.message);
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
