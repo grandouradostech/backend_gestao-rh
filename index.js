@@ -104,6 +104,7 @@ function padronizarVaga(vaga) {
   let v = (vaga || '').normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase().trim();
   if (v === 'auxiliar de entrega' || v === 'auxiliar de distribuicao') v = 'auxiliar de distribuicao';
   if (v === 'motorista de entrega' || v === 'motorista de distribuicao') v = 'motorista de distribuicao';
+  if (v === 'assistente financeiro') v = 'auxiliar financeiro';
   return v;
 }
 
