@@ -739,15 +739,23 @@ app.get('/requisitos', async (req, res) => {
   }
 });
 // Inserir requisito
-app.post('/requisitos', async (req, res) => {
-  const { vaga_nome, requisito, diferencial, cidades } = req.body;
+app.post('/requisitos', auth, onlyGestor, async (req, res) => {
+  const { vaga_nome, requisito, diferencial, cidades, atividades, is_pcd } = req.body;
   if (!vaga_nome || !requisito) return res.status(400).json({ error: 'Campos obrigatórios' });
   try {
-    const { data, error } = await supabase.from('requisitos').insert([{ vaga_nome, requisito, diferencial, cidades }]).select();
-    if (error) return res.status(500).json({ error: error.message });
+    const { data, error } = await supabase.from('requisitos').insert([{
+      vaga_nome,
+      requisito,
+      diferencial,
+      cidades,
+      atividades,
+      is_pcd: !!is_pcd
+    }]).select();
+    if (error) throw error;
     res.json(data[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao inserir requisito' });
+  } catch (e) {
+    console.error('Erro ao adicionar requisito:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 // Remover requisito
@@ -764,14 +772,15 @@ app.delete('/requisitos/:id', async (req, res) => {
   }
 });
 // Editar requisito, diferencial ou atividades
-app.patch('/requisitos/:id', async (req, res) => {
+app.patch('/requisitos/:id', auth, onlyGestor, async (req, res) => {
   const { id } = req.params;
-  const { tipo, valor } = req.body;
+  const { tipo, valor, is_pcd } = req.body;
   if (!['requisito', 'diferencial', 'atividades'].includes(tipo)) {
     return res.status(400).json({ error: 'Tipo inválido' });
   }
   const updateObj = {};
   updateObj[tipo] = valor;
+  if (is_pcd !== undefined) updateObj.is_pcd = !!is_pcd;
   const { data, error } = await supabase
     .from('requisitos')
     .update(updateObj)

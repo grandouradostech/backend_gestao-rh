@@ -35,5 +35,21 @@
       "Facilidade de comunicação e proatividade.",
       "Conhecimento das rotas locais."
     ]
+  },
+  "REPRESENTANTE_DE_NEGOCIOS": {
+    "titulo": "Representante de Negócios",
+    "data_abertura": "2025-05-15",
+    "requisitos": [
+      "Ensino médio completo.",
+      "Experiência em vendas.",
+      "Boa comunicação e relacionamento interpessoal.",
+      "Disponibilidade para viagens.",
+      "Conhecimento de informática básica."
+    ],
+    "diferenciais": [
+      "Experiência no setor de bebidas.",
+      "Conhecimento do mercado local.",
+      "CNH categoria B."
+    ]
   }
 } 
