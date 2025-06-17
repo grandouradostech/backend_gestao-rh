@@ -899,6 +899,54 @@ app.patch('/candidaturas/:response_id/telefone', async (req, res) => {
   }
 });
 
+// Endpoint para reanalisar IA de um candidato existente
+app.post('/reanalisar/:response_id', async (req, res) => {
+  try {
+    const { response_id } = req.params;
+    // Buscar dados do candidato no banco
+    const { data: candidato, error } = await supabase
+      .from('candidaturas')
+      .select('*')
+      .eq('response_id', response_id)
+      .single();
+
+    if (error || !candidato) {
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+
+    // Reutilizar a lógica do webhook/importar-candidaturas
+    const response = candidato.raw_data || candidato.dados_estruturados;
+    const formId = response?.form_id || candidato.dados_estruturados?.form_id;
+    const caminhoCurriculo = candidato.curriculo_path || null;
+
+    // Buscar requisitos da vaga, se necessário (igual webhook)
+    let requisitosVaga = null;
+    if (candidato.dados_estruturados?.profissional?.vaga) {
+      const vaga_normalizada = (candidato.dados_estruturados.profissional.vaga || '').toLowerCase().trim();
+      const { data: todasVagas } = await supabase.from('requisitos').select('*');
+      requisitosVaga = todasVagas.find(v => (v.vaga_nome || '').toLowerCase().trim() === vaga_normalizada);
+    }
+
+    // Chamar a função de análise IA
+    const analise = await analisarCandidatura(response, caminhoCurriculo, requisitosVaga);
+
+    // Atualizar o candidato no banco
+    const { error: updateError } = await supabase.from('candidaturas').update({
+      analise_ia: analise,
+      updated_at: new Date().toISOString()
+    }).eq('response_id', response_id);
+
+    if (updateError) {
+      return res.status(500).json({ error: 'Erro ao atualizar análise IA' });
+    }
+
+    return res.status(200).json({ success: true, analise });
+  } catch (err) {
+    console.error('Erro na reanálise IA:', err);
+    return res.status(500).json({ error: 'Erro interno ao reanalisar IA' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
