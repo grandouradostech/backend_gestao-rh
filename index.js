@@ -12,6 +12,7 @@ const SECRET = process.env.JWT_SECRET || 'supersecret';
 console.log('JWT_SECRET em uso:', SECRET);
 const fs = require('fs');
 const path = require('path');
+const { extrairCampoTextoPorId } = require('./importar-candidaturas');
 
 const app = express();
 app.use(cors());
