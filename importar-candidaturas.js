@@ -426,5 +426,11 @@ main();
 
 module.exports = {
   extrairCampoTextoPorId,
-  MAPA_CAMPOS
+  MAPA_CAMPOS,
+  normalizeText,
+  sanitizeFilename,
+  processarAnexos,
+  fetchAllResponses,
+  processarCandidatura,
+  main
 };

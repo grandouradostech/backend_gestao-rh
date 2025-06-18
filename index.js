@@ -12,7 +12,7 @@ const SECRET = process.env.JWT_SECRET || 'supersecret';
 console.log('JWT_SECRET em uso:', SECRET);
 const fs = require('fs');
 const path = require('path');
-const { extrairCampoTextoPorId, MAPA_CAMPOS } = require('./importar-candidaturas');
+const { extrairCampoTextoPorId, MAPA_CAMPOS, normalizeText } = require('./importar-candidaturas');
 
 const app = express();
 app.use(cors());
