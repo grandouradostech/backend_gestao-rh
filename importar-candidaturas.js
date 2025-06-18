@@ -423,3 +423,8 @@ async function main() {
 }
 
 main();
+
+module.exports = {
+  extrairCampoTextoPorId,
+  MAPA_CAMPOS
+};
