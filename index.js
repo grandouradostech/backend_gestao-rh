@@ -797,18 +797,24 @@ app.patch('/requisitos/:id', auth, onlyGestor, async (req, res) => {
 // Listar anotações do gestor logado
 app.get('/anotacoes', auth, async (req, res) => {
   const { user } = req;
+  const agora = new Date().toISOString();
+
+  // Busca anotações do próprio usuário OU anotações públicas de outros
+  // que ainda não expiraram.
   const { data, error } = await supabase
     .from('anotacoes')
     .select('*')
-    .eq('usuario_id', user.id)
+    .or(`usuario_id.eq.${user.id},is_public.eq.true`)
+    .or(`expires_at.is.null,expires_at.gt.${agora}`)
     .order('created_at', { ascending: false });
+    
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
 // Criar nova anotação
 app.post('/anotacoes', auth, async (req, res) => {
-  const { anotacao } = req.body;
+  const { anotacao, is_public, expires_at } = req.body; // Pegar novos campos
   const { user } = req;
   if (!anotacao || !anotacao.trim()) return res.status(400).json({ error: 'Anotação obrigatória' });
   const { data, error } = await supabase
@@ -816,7 +822,9 @@ app.post('/anotacoes', auth, async (req, res) => {
     .insert([{
       usuario_id: user.id,
       usuario_nome: user.nome,
-      anotacao
+      anotacao,
+      is_public: !!is_public, // Garantir que seja boolean
+      expires_at: expires_at || null // Salvar null se não for enviado
     }])
     .select();
   if (error) return res.status(500).json({ error: error.message });
@@ -826,15 +834,31 @@ app.post('/anotacoes', auth, async (req, res) => {
 // Atualizar anotação (só do próprio usuário)
 app.patch('/anotacoes/:id', auth, async (req, res) => {
   const { id } = req.params;
-  const { anotacao } = req.body;
+  const { anotacao, is_public, expires_at } = req.body;
   const { user } = req;
+
   if (!anotacao || !anotacao.trim()) return res.status(400).json({ error: 'Anotação obrigatória' });
+
+  const updateData = {
+    anotacao,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (is_public !== undefined) {
+    updateData.is_public = !!is_public;
+  }
+  
+  if (expires_at !== undefined) {
+    updateData.expires_at = expires_at;
+  }
+
   const { data, error } = await supabase
     .from('anotacoes')
-    .update({ anotacao, updated_at: new Date().toISOString() })
+    .update(updateData)
     .eq('id', id)
     .eq('usuario_id', user.id)
     .select();
+    
   if (error || !data || !data[0]) return res.status(500).json({ error: error?.message || 'Não encontrado' });
   res.json(data[0]);
 });
