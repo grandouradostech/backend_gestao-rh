@@ -8,7 +8,7 @@ const axios = require('axios');
 const qs = require('qs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const SECRET = process.env.JWT_SECRET || 'supersecret';
+const SECRET = process.env.JWT_SECRET || 'your-secret-key';
 console.log('JWT_SECRET em uso:', SECRET);
 const fs = require('fs');
 const path = require('path');
@@ -20,76 +20,62 @@ app.use(express.json());
 
 async function processarAnexos(response, responseId) {
   try {
-    console.log('[WEBHOOK] processarAnexos - response:', JSON.stringify(response.answers, null, 2));
-    // IDs conhecidos de campo de currículo
-    const IDS_CURRICULO = [
-      '3906df64-4b2f-4d6b-9b86-84a48a329ba2', // padrão
-      'uWyR9IgTXhoc', // i6GB06nW exemplo
-      '3fJBj1zWtR34', // OejwZ32V exemplo
-    ];
-    // Procura o campo de currículo pelo ID conhecido
-    const campoCurriculo = response.answers.find(a =>
-      a.type === 'file_url' &&
-      a.file_url &&
-      a.field &&
-      IDS_CURRICULO.includes(a.field.id)
-    ) || response.answers.find(a => a.type === 'file_url' && a.file_url); // fallback para o antigo
-    if (!campoCurriculo) {
-      console.log('[WEBHOOK] Campo de currículo não encontrado.');
+    // Buscar campo de currículo nas respostas
+    const fileField = response.answers?.find(ans => 
+      ans.type === 'file_upload' || 
+      ans.field?.type === 'file_upload'
+    );
+
+    if (!fileField) {
       return null;
     }
-    const fileUrl = campoCurriculo.file_url;
-    const fileName = fileUrl.split('/').pop();
-    const ext = fileName.split('.').pop().toLowerCase();
-    let contentType = 'application/octet-stream';
-    if (ext === 'pdf') contentType = 'application/pdf';
-    if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
-    if (ext === 'png') contentType = 'image/png';
-    console.log(`[WEBHOOK] Baixando arquivo ${fileName} (${fileUrl})...`);
-    const resposta = await fetch(fileUrl, {
-      headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
-    });
+
+    const fileUrl = fileField.file_url;
+    const fileName = fileField.file_name || 'curriculo.pdf';
+
+    // Baixar arquivo do Typeform
+    const resposta = await fetch(fileUrl);
     if (!resposta.ok) {
-      console.log(`[WEBHOOK] Falha ao baixar arquivo do Typeform. Status: ${resposta.status}`);
       return null;
     }
-    const buffer = await resposta.buffer();
-    console.log(`[WEBHOOK] Upload para Supabase Storage...`);
+
+    const buffer = await resposta.arrayBuffer();
+
+    // Upload para Supabase Storage
     const { data, error } = await supabase.storage
-      .from('curriculo')
-      .upload(
-        `${responseId}/${fileName}`,
-        buffer,
-        { 
-          contentType,
-          upsert: true,
-          cacheControl: '3600'
-        }
-      );
+      .from('curriculos')
+      .upload(`${responseId}/${fileName}`, buffer, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+
     if (error) {
-      console.log(`[WEBHOOK] Erro no upload para Supabase:`, error.message);
       return null;
     }
-    console.log(`[WEBHOOK] Upload concluído em ${responseId}/${fileName}`);
+
     return `${responseId}/${fileName}`;
   } catch (error) {
-    console.error('[WEBHOOK] Erro no upload do currículo:', error.message);
     return null;
   }
 }
 
-// Middleware para autenticação
+// Middleware de autenticação JWT
 function auth(req, res, next) {
   const authHeader = req.headers.authorization;
-  console.log('Authorization header:', authHeader);
-  if (!authHeader) return res.status(401).json({ error: 'Token não enviado' });
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Token não fornecido' });
+  }
+
   const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Token mal formatado' });
+  }
+
   try {
-    const user = jwt.verify(token, SECRET);
-    req.user = user;
+    const decoded = jwt.verify(token, SECRET);
+    req.user = decoded;
     next();
   } catch (e) {
-    console.log('Erro JWT:', e.message);
     return res.status(401).json({ error: 'Token inválido' });
   }
 }
@@ -682,7 +668,7 @@ app.post('/webhook-prova', async (req, res) => {
       }
     }
     responseId = response.response_id || response.token;
-    console.log('[WEBHOOK DEBUG] Extraído:', { email, cpf, telefone, nome, responseId });
+    
     // 1. Tenta por e-mail
     let { data: candidato } = await supabase
       .from('candidaturas')
@@ -748,10 +734,9 @@ app.post('/webhook-prova', async (req, res) => {
       }
     }
     if (!candidato) {
-      console.log('[WEBHOOK DEBUG] Nenhum candidato encontrado por nenhum critério!');
       return res.status(404).json({ error: 'Candidato não encontrado por nenhum identificador' });
     }
-    console.log(`[WEBHOOK DEBUG] Candidato encontrado! id: ${candidato.id}, critério: ${criterioUsado}`);
+    
     // Montar prompt para IA
     const respostas = (response.answers || []).map(ans => {
       if (ans.text) return ans.text;
@@ -789,7 +774,7 @@ app.post('/webhook-prova', async (req, res) => {
     if (formId === FORM_IDS.simples) { updateObj.nota_prova_simples = nota; colunaNota = 'nota_prova_simples'; }
     else if (formId === FORM_IDS.direcao) { updateObj.nota_prova_direcao = nota; colunaNota = 'nota_prova_direcao'; }
     else if (formId === FORM_IDS.admin) { updateObj.nota_prova_admin = nota; colunaNota = 'nota_prova_admin'; }
-    console.log(`[WEBHOOK DEBUG] formId: ${formId}, coluna a atualizar: ${colunaNota}, nota: ${nota}`);
+    
     if (Object.keys(updateObj).length > 0) {
       await supabase
         .from('candidaturas')
@@ -801,14 +786,6 @@ app.post('/webhook-prova', async (req, res) => {
     console.error('Erro no webhook de prova:', err);
     res.status(500).json({ error: 'Erro ao processar webhook de prova' });
   }
-});
-
-// DEBUG LOG para todas as requisições de requisitos
-app.use((req, res, next) => {
-  if (req.url.startsWith('/requisitos')) {
-    console.log('[DEBUG][REQUISITOS] Método:', req.method, 'URL:', req.url, 'Body:', req.body);
-  }
-  next();
 });
 
 // ENDPOINTS DE REQUISITOS (NOVO MODELO)
@@ -847,11 +824,9 @@ app.delete('/requisitos/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const { error } = await supabase.from('requisitos').delete().eq('id', id);
-    console.log('[DEBUG][DELETE /requisitos/:id] id:', id, 'error:', error);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
   } catch (err) {
-    console.error('[DEBUG][DELETE /requisitos/:id] catch:', err);
     res.status(500).json({ error: 'Erro ao remover requisito' });
   }
 });
@@ -870,7 +845,6 @@ app.patch('/requisitos/:id', auth, onlyGestor, async (req, res) => {
     .update(updateObj)
     .eq('id', id)
     .select();
-  console.log('[DEBUG][PATCH /requisitos/:id]', 'id:', id, 'tipo:', tipo, 'valor:', valor, 'data:', data, 'error:', error);
   if (error || !data || !data[0]) return res.status(500).json({ error: error?.message || 'Não encontrado' });
   res.json(data[0]);
 });
@@ -1058,6 +1032,69 @@ app.post('/reanalisar/:response_id', async (req, res) => {
 // Endpoint de teste
 app.get('/test', (req, res) => {
   res.json({ message: 'Servidor funcionando!', timestamp: new Date().toISOString() });
+});
+
+// Webhook do Typeform
+app.post('/webhook', async (req, res) => {
+  try {
+    const { form_response } = req.body;
+    const { form_id, response_id } = form_response;
+
+    // Processar anexos (currículo)
+    const curriculoPath = await processarAnexos(form_response, response_id);
+
+    // Estruturar dados do candidato
+    const dadosEstruturados = {
+      pessoal: {},
+      profissional: {},
+      form_id,
+      response_id
+    };
+
+    // Processar respostas do formulário
+    if (form_response.answers) {
+      for (const answer of form_response.answers) {
+        const fieldId = answer.field?.id;
+        const value = answer.text || answer.email || answer.phone_number || answer.choice?.label || answer.choices?.labels?.join(', ');
+
+        // Mapear campos conhecidos
+        if (fieldId === '3906df64-4b2f-4d6b-9b86-84a48a329ba2' || answer.type === 'file_upload') {
+          dadosEstruturados.pessoal.curriculo = curriculoPath;
+        } else if (fieldId === 'uWyR9IgTXhoc' || answer.type === 'short_text') {
+          dadosEstruturados.pessoal.nome = value;
+        } else if (fieldId === '3fJBj1zWtR34' || answer.type === 'email') {
+          dadosEstruturados.pessoal.email = value;
+        } else if (fieldId === 'OejwZ32V' || answer.type === 'phone_number') {
+          dadosEstruturados.pessoal.telefone = value;
+        } else if (fieldId === 'i6GB06nW' || answer.type === 'choice') {
+          dadosEstruturados.profissional.vaga = value;
+        }
+      }
+    }
+
+    // Salvar no banco
+    const { data, error } = await supabase
+      .from('candidaturas')
+      .insert({
+        response_id,
+        form_id,
+        dados_estruturados: dadosEstruturados,
+        curriculo_path: curriculoPath,
+        status: 'Novos candidatos',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Erro ao salvar candidatura:', error);
+      return res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Erro no webhook:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
