@@ -426,6 +426,89 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
   }
 });
 
+// Endpoint para verificar estrutura da tabela candidaturas
+app.get('/check-table-structure', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('candidaturas')
+      .select('*')
+      .limit(1);
+
+    if (error) {
+      console.error('Erro ao verificar estrutura da tabela:', error);
+      return res.status(500).json({ error: 'Erro ao verificar estrutura da tabela' });
+    }
+
+    if (data && data.length > 0) {
+      const columns = Object.keys(data[0]);
+      console.log('Colunas da tabela candidaturas:', columns);
+      res.json({ 
+        success: true, 
+        columns: columns,
+        hasObservacao: columns.includes('observacao')
+      });
+    } else {
+      res.json({ 
+        success: true, 
+        columns: [],
+        hasObservacao: false
+      });
+    }
+  } catch (error) {
+    console.error('Erro ao verificar estrutura da tabela:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Endpoint PUT para atualizar apenas a observação
+app.put('/candidaturas/:response_id/observacao', async (req, res) => {
+  const { response_id } = req.params;
+  const { observacao } = req.body;
+  
+  try {
+    if (typeof observacao !== 'string') {
+      return res.status(400).json({ error: 'Observação deve ser uma string' });
+    }
+
+    // Primeiro, verificar se o candidato existe
+    const { data: candidato, error: errorBusca } = await supabase
+      .from('candidaturas')
+      .select('*')
+      .eq('response_id', response_id)
+      .single();
+
+    if (errorBusca) {
+      console.error('Erro ao buscar candidato:', errorBusca);
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+
+    // Atualizar apenas a observação
+    const { data, error } = await supabase
+      .from('candidaturas')
+      .update({ 
+        observacao: observacao.trim(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('response_id', response_id)
+      .select();
+
+    if (error) {
+      console.error('Erro ao atualizar observação:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar observação', details: error });
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+
+    console.log('Observação atualizada com sucesso para candidato:', response_id);
+    res.json({ success: true, data: data[0] });
+  } catch (error) {
+    console.error('Erro ao atualizar observação:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // Login
 app.post('/login', async (req, res) => {
   const { email, senha } = req.body;
@@ -970,6 +1053,11 @@ app.post('/reanalisar/:response_id', async (req, res) => {
     console.error('Erro na reanálise IA:', err);
     return res.status(500).json({ error: 'Erro interno ao reanalisar IA' });
   }
+});
+
+// Endpoint de teste
+app.get('/test', (req, res) => {
+  res.json({ message: 'Servidor funcionando!', timestamp: new Date().toISOString() });
 });
 
 const PORT = process.env.PORT || 3000;
