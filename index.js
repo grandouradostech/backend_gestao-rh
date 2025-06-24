@@ -413,7 +413,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
 });
 
 // Endpoint para verificar estrutura da tabela candidaturas
-app.get('/check-table-structure', async (req, res) => {
+app.get('/candidaturas/estrutura', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('candidaturas')
@@ -421,7 +421,7 @@ app.get('/check-table-structure', async (req, res) => {
       .limit(1);
 
     if (error) {
-      console.error('Erro ao verificar estrutura da tabela:', error);
+      console.error('Erro ao verificar estrutura:', error);
       return res.status(500).json({ error: 'Erro ao verificar estrutura da tabela' });
     }
 
@@ -431,13 +431,15 @@ app.get('/check-table-structure', async (req, res) => {
       res.json({ 
         success: true, 
         columns: columns,
-        hasObservacao: columns.includes('observacao')
+        hasObservacao: columns.includes('observacao'),
+        hasMotivoStatus: columns.includes('motivo_status')
       });
     } else {
       res.json({ 
         success: true, 
         columns: [],
-        hasObservacao: false
+        hasObservacao: false,
+        hasMotivoStatus: false
       });
     }
   } catch (error) {
@@ -1094,6 +1096,119 @@ app.post('/webhook', async (req, res) => {
   } catch (error) {
     console.error('Erro no webhook:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Endpoint para atualizar status com motivo (para Banco de Talentos, Black List, Reprovado)
+app.patch('/candidaturas/:response_id/status-com-motivo', async (req, res) => {
+  const { response_id } = req.params;
+  const { status, motivo, assumido_por, assumido_por_nome, data_entrevista } = req.body;
+  
+  try {
+    if (!status || !motivo || !motivo.trim()) {
+      return res.status(400).json({ error: 'Status e motivo são obrigatórios' });
+    }
+
+    // Verificar se o status requer motivo
+    const statusComMotivo = ['Banco de Talentos', 'Black list', 'Reprovado'];
+    if (!statusComMotivo.includes(status)) {
+      return res.status(400).json({ error: 'Este status não requer motivo' });
+    }
+
+    // Primeiro, verificar se o candidato existe
+    const { data: candidato, error: errorBusca } = await supabase
+      .from('candidaturas')
+      .select('*')
+      .eq('response_id', response_id)
+      .single();
+
+    if (errorBusca) {
+      console.error('Erro ao buscar candidato:', errorBusca);
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+
+    // Preparar dados para atualização
+    const updateData = {
+      status,
+      motivo_status: motivo.trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Adicionar campos opcionais se fornecidos
+    if (assumido_por) updateData.assumido_por = assumido_por;
+    if (assumido_por_nome) updateData.assumido_por_nome = assumido_por_nome;
+    if (data_entrevista) updateData.data_entrevista = data_entrevista;
+
+    // Atualizar candidato
+    const { data, error } = await supabase
+      .from('candidaturas')
+      .update(updateData)
+      .eq('response_id', response_id)
+      .select();
+
+    if (error) {
+      console.error('Erro ao atualizar candidato:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar candidato', details: error });
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Candidato não encontrado' });
+    }
+
+    res.json({ success: true, data: data[0] });
+  } catch (error) {
+    console.error('Erro ao atualizar candidato:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Endpoint para adicionar coluna motivo_status se não existir
+app.post('/candidaturas/adicionar-coluna-motivo', async (req, res) => {
+  try {
+    // Primeiro verificar se a coluna já existe
+    const { data: checkData, error: checkError } = await supabase
+      .from('candidaturas')
+      .select('motivo_status')
+      .limit(1);
+
+    if (checkError && checkError.code === '42703') {
+      // Coluna não existe, vamos criá-la
+      const { error: alterError } = await supabase.rpc('exec_sql', {
+        sql: 'ALTER TABLE candidaturas ADD COLUMN motivo_status TEXT'
+      });
+
+      if (alterError) {
+        console.error('Erro ao adicionar coluna motivo_status:', alterError);
+        return res.status(500).json({ 
+          error: 'Erro ao adicionar coluna motivo_status', 
+          details: alterError 
+        });
+      }
+
+      console.log('Coluna motivo_status adicionada com sucesso');
+      res.json({ 
+        success: true, 
+        message: 'Coluna motivo_status adicionada com sucesso' 
+      });
+    } else if (checkError) {
+      console.error('Erro ao verificar coluna motivo_status:', checkError);
+      return res.status(500).json({ 
+        error: 'Erro ao verificar coluna motivo_status', 
+        details: checkError 
+      });
+    } else {
+      // Coluna já existe
+      res.json({ 
+        success: true, 
+        message: 'Coluna motivo_status já existe' 
+      });
+    }
+  } catch (error) {
+    console.error('Erro ao adicionar coluna motivo_status:', error);
+    res.status(500).json({ 
+      error: 'Erro interno do servidor', 
+      details: error.message 
+    });
   }
 });
 
