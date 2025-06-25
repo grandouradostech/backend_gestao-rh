@@ -872,6 +872,94 @@ app.get('/vagas/:vaga_id/tempo-medio-fases', async (req, res) => {
   }
 });
 
+// Endpoint para adicionar candidato manualmente
+app.post('/candidaturas/manual', async (req, res) => {
+  try {
+    const { nome, email, telefone, cpf, data_nascimento, vaga, status } = req.body;
+
+    // Validações básicas
+    if (!nome || !email) {
+      return res.status(400).json({ error: 'Nome e e-mail são obrigatórios' });
+    }
+
+    // Gerar response_id único
+    const response_id = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Estruturar dados do candidato
+    const dados_estruturados = {
+      pessoal: {
+        nome: nome,
+        email: email,
+        telefone: telefone || null,
+        cpf: cpf || null,
+        data_nascimento: data_nascimento || null,
+        idade: data_nascimento ? calcularIdade(data_nascimento) : null
+      },
+      profissional: {
+        vaga: vaga || null
+      }
+    };
+
+    // Criar candidato no banco
+    const { data, error } = await supabase.from('candidaturas').insert({
+      response_id: response_id,
+      nome: nome,
+      email: email,
+      telefone: telefone || null,
+      cpf: cpf || null,
+      status: status || 'Analisado por IA',
+      dados_estruturados: dados_estruturados,
+      raw_data: {
+        form_response: {
+          response_id: response_id,
+          answers: []
+        }
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    if (error) {
+      console.error('Erro ao inserir candidato manual:', error);
+      return res.status(500).json({ error: 'Erro ao salvar candidato' });
+    }
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Candidato adicionado com sucesso',
+      response_id: response_id 
+    });
+
+  } catch (error) {
+    console.error('Erro ao adicionar candidato manual:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Função para calcular idade (importada do importar-candidaturas)
+function calcularIdade(dataNascimento) {
+  if (!dataNascimento) return null;
+  
+  try {
+    const hoje = new Date();
+    const nascimento = new Date(dataNascimento);
+    
+    if (isNaN(nascimento.getTime())) return null;
+    
+    let idade = hoje.getFullYear() - nascimento.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const mesNascimento = nascimento.getMonth();
+    
+    if (mesAtual < mesNascimento || (mesAtual === mesNascimento && hoje.getDate() < nascimento.getDate())) {
+      idade--;
+    }
+    
+    return idade > 0 ? idade : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 // Endpoint para receber webhook das provas do Typeform
 app.post('/webhook-prova', async (req, res) => {
   try {
