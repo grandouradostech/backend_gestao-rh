@@ -694,11 +694,16 @@ app.post('/usuarios/upload-avatar', auth, async (req, res) => {
     console.log('🗑️ Arquivo temporário removido');
 
     // Gerar URL pública
-    const { data: { publicUrl } } = supabase.storage
-      .from('avatares')
-      .getPublicUrl(fileName);
+    const supabaseUrl = 'https://nbaoripzckjnqwpsnxnz.supabase.co';
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/avatares/${fileName}`;
     
     console.log('🔗 URL pública gerada:', publicUrl);
+
+    // Verificar se a URL foi gerada corretamente
+    if (!publicUrl) {
+      console.error('❌ Erro: URL pública não foi gerada');
+      return res.status(500).json({ error: 'Erro ao gerar URL da imagem' });
+    }
 
     // Atualizar usuário no banco
     console.log('💾 Atualizando usuário no banco...');
