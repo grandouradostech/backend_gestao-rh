@@ -13,10 +13,17 @@ console.log('JWT_SECRET em uso:', SECRET);
 const fs = require('fs');
 const path = require('path');
 const { extrairCampoTextoPorId, MAPA_CAMPOS, normalizeText } = require('./importar-candidaturas');
+const fileUpload = require('express-fileupload');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(fileUpload({
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  abortOnLimit: true,
+  useTempFiles: true,
+  tempFileDir: '/tmp/'
+}));
 
 // Função para verificar e criar bucket avatares
 async function ensureAvataresBucket() {
@@ -615,6 +622,86 @@ app.patch('/usuarios/atualizar', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao atualizar usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Upload de avatar
+app.post('/usuarios/upload-avatar', auth, async (req, res) => {
+  try {
+    // Verificar se há arquivo
+    if (!req.files || !req.files.image) {
+      return res.status(400).json({ error: 'Nenhuma imagem enviada' });
+    }
+
+    const file = req.files.image;
+    const userId = req.body.userId || req.user.id;
+
+    // Verificar se o usuário pode atualizar (próprio usuário ou gestor)
+    if (req.user.id !== userId && req.user.role !== 'gestor') {
+      return res.status(403).json({ error: 'Sem permissão para atualizar este usuário' });
+    }
+
+    // Validar tipo de arquivo
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return res.status(400).json({ error: 'Tipo de arquivo não permitido. Use apenas JPEG, PNG, GIF ou WebP' });
+    }
+
+    // Validar tamanho (máximo 5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return res.status(400).json({ error: 'A imagem deve ter no máximo 5MB' });
+    }
+
+    // Gerar nome único para o arquivo
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+    // Ler o arquivo temporário
+    const fileBuffer = fs.readFileSync(file.tempFilePath);
+
+    // Upload para Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('avatares')
+      .upload(fileName, fileBuffer, {
+        contentType: file.mimetype,
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Erro no upload para Supabase:', error);
+      return res.status(500).json({ error: 'Erro ao fazer upload da imagem' });
+    }
+
+    // Limpar arquivo temporário
+    fs.unlinkSync(file.tempFilePath);
+
+    // Gerar URL pública
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatares')
+      .getPublicUrl(fileName);
+
+    // Atualizar usuário no banco
+    const { error: updateError } = await supabase
+      .from('usuarios_rh')
+      .update({ imagem_url: publicUrl })
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('Erro ao atualizar usuário:', updateError);
+      return res.status(500).json({ error: 'Erro ao atualizar usuário' });
+    }
+
+    res.json({ 
+      success: true, 
+      imagem_url: publicUrl,
+      message: 'Avatar atualizado com sucesso'
+    });
+
+  } catch (error) {
+    console.error('Erro ao fazer upload de avatar:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
