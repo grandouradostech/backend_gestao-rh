@@ -18,6 +18,43 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Função para verificar e criar bucket avatares
+async function ensureAvataresBucket() {
+  try {
+    // Verificar se o bucket existe
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error('Erro ao listar buckets:', listError);
+      return;
+    }
+
+    const avataresBucket = buckets.find(bucket => bucket.name === 'avatares');
+    
+    if (!avataresBucket) {
+      console.log('Criando bucket avatares...');
+      const { data, error } = await supabase.storage.createBucket('avatares', {
+        public: true,
+        allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
+        fileSizeLimit: 5242880 // 5MB
+      });
+      
+      if (error) {
+        console.error('Erro ao criar bucket avatares:', error);
+      } else {
+        console.log('Bucket avatares criado com sucesso');
+      }
+    } else {
+      console.log('Bucket avatares já existe');
+    }
+  } catch (error) {
+    console.error('Erro ao verificar/criar bucket avatares:', error);
+  }
+}
+
+// Verificar bucket na inicialização
+ensureAvataresBucket();
+
 async function processarAnexos(response, responseId) {
   try {
     // Buscar campo de currículo nas respostas
@@ -524,6 +561,62 @@ app.post('/usuarios', auth, onlyGestor, async (req, res) => {
   const { data, error } = await supabase.from('usuarios_rh').insert([{ nome, email, senha: hash, role, imagem_url }]);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// Atualizar usuário (próprio usuário ou gestor)
+app.patch('/usuarios/atualizar', auth, async (req, res) => {
+  const { id, nome, email, novaSenha } = req.body;
+  
+  // Validações
+  if (!id) return res.status(400).json({ error: 'ID do usuário é obrigatório' });
+  if (!nome || !email) return res.status(400).json({ error: 'Nome e email são obrigatórios' });
+  
+  // Verificar se o usuário pode atualizar (próprio usuário ou gestor)
+  if (req.user.id !== id && req.user.role !== 'gestor') {
+    return res.status(403).json({ error: 'Sem permissão para atualizar este usuário' });
+  }
+
+  try {
+    const updateData = {
+      nome: nome.trim(),
+      email: email.trim()
+    };
+
+    // Se há nova senha, encriptar e incluir
+    if (novaSenha) {
+      if (novaSenha.length < 6) {
+        return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres' });
+      }
+      const hash = await bcrypt.hash(novaSenha, 10);
+      updateData.senha = hash;
+    }
+
+    // Atualizar no banco
+    const { data, error } = await supabase
+      .from('usuarios_rh')
+      .update(updateData)
+      .eq('id', id)
+      .select('id, nome, email, role, imagem_url');
+
+    if (error) {
+      console.error('Erro ao atualizar usuário:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar usuário' });
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    res.json({ 
+      success: true, 
+      user: data[0],
+      message: novaSenha ? 'Usuário e senha atualizados com sucesso' : 'Usuário atualizado com sucesso'
+    });
+
+  } catch (error) {
+    console.error('Erro ao atualizar usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 // ENDPOINT DE VAGAS (agora dinâmico, busca na tabela requisitos)
