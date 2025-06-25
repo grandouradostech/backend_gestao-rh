@@ -31,22 +31,25 @@ const IDS_CURRICULO = [
 
 const MAPA_CAMPOS = {
   ynFUyrAc: {
-    nome: ['oq4YGUe70Wk6', '6VkDMDJph5Jc'],
-    cpf: ['ZfxImfwRovM8', 'kyDMKvIiREJN'],
-    telefone: ['YSBd6MMq285s', 'ryREsjI6ocDM'],
-    email: ['7Ug3CCMc1sbO', '0H5FhjQdZsUU']
+    nome: '6VkDMDJph5Jc',
+    cpf: 'kyDMKvIiREJN',
+    telefone: 'ryREsjI6ocDM',
+    email: '0H5FhjQdZsUU',
+    dataNascimento: 'YjlVPbYIjF5L'
   },
   i6GB06nW: {
     nome: 'c0SRbHskERPD',
     cpf: '8vaBwiO7kELZ',
     telefone: 'lXkYZdgtJuCM',
-    email: 'DRrZHCUp0EhV'
+    email: 'DRrZHCUp0EhV',
+    dataNascimento: 'ZfxImfwRovM8'
   },
   OejwZ32V: {
     nome: 'w0kqjkpQ8Oav',
     cpf: 'xWO9ZhqjMIsx',
     telefone: 'mraynQBpbAew',
-    email: 'djlTJfSHbAA4'
+    email: 'djlTJfSHbAA4',
+    dataNascimento: 'MZeKTR2jRuVF'
   }
 };
 
@@ -121,6 +124,129 @@ function normalizeText(text) {
     .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
+}
+
+// Função para extrair e padronizar data de nascimento
+function extrairDataNascimento(texto) {
+  if (!texto || typeof texto !== 'string') return null;
+  
+  // Remove espaços extras e normaliza
+  let data = texto.trim().toLowerCase();
+  
+  // Mapeamento de meses em português
+  const meses = {
+    'janeiro': '01', 'jan': '01',
+    'fevereiro': '02', 'fev': '02',
+    'março': '03', 'mar': '03', 'marco': '03',
+    'abril': '04', 'abr': '04',
+    'maio': '05', 'mai': '05',
+    'junho': '06', 'jun': '06',
+    'julho': '07', 'jul': '07',
+    'agosto': '08', 'ago': '08',
+    'setembro': '09', 'set': '09',
+    'outubro': '10', 'out': '10',
+    'novembro': '11', 'nov': '11',
+    'dezembro': '12', 'dez': '12'
+  };
+
+  // Padrões de data para extração
+  const padroes = [
+    // DD/MM/YYYY ou DD-MM-YYYY
+    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/,
+    // DD.MM.YYYY
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/,
+    // DD MM YYYY
+    /^(\d{1,2})\s+(\d{1,2})\s+(\d{4})$/,
+    // DDMMYYYY (sem separadores)
+    /^(\d{2})(\d{2})(\d{4})$/,
+    // DD de Mês de YYYY (português, aceita acentos)
+    /^(\d{1,2})\s+de\s+([\wçãõáéíóúâêîôûàèìòùäëïöüÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÄËÏÖÜ]+)\s+de\s+(\d{4})$/,
+    // DD Mês YYYY (português, aceita acentos)
+    /^(\d{1,2})\s+([\wçãõáéíóúâêîôûàèìòùäëïöüÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÄËÏÖÜ]+)\s+(\d{4})$/,
+    // YYYY-MM-DD (formato ISO)
+    /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+  ];
+
+  // Tenta cada padrão
+  for (let i = 0; i < padroes.length; i++) {
+    const match = data.match(padroes[i]);
+    if (match) {
+      let dia, mes, ano;
+      
+      if (i === 4 || i === 5) {
+        // Padrões com meses em português
+        dia = match[1].padStart(2, '0');
+        const mesNome = match[2];
+        // Normaliza o nome do mês para tratar caracteres especiais
+        const mesNormalizado = mesNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        mes = meses[mesNome] || meses[mesNormalizado];
+        ano = match[3];
+      } else if (i === 6) {
+        // Formato ISO (YYYY-MM-DD)
+        ano = match[1];
+        mes = match[2].padStart(2, '0');
+        dia = match[3].padStart(2, '0');
+      } else {
+        // Outros formatos
+        dia = match[1].padStart(2, '0');
+        mes = match[2].padStart(2, '0');
+        ano = match[3];
+      }
+
+      // Validações básicas
+      if (!mes || !meses[mes.toLowerCase()]) {
+        // Se não encontrou o mês em português, tenta como número
+        if (parseInt(mes) < 1 || parseInt(mes) > 12) continue;
+      } else {
+        mes = meses[mes.toLowerCase()];
+      }
+
+      const diaInt = parseInt(dia);
+      const mesInt = parseInt(mes);
+      const anoInt = parseInt(ano);
+
+      // Validações de data
+      if (diaInt < 1 || diaInt > 31) continue;
+      if (mesInt < 1 || mesInt > 12) continue;
+      if (anoInt < 1900 || anoInt > new Date().getFullYear()) continue;
+
+      // Validações específicas por mês
+      const diasPorMes = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      if (anoInt % 4 === 0 && (anoInt % 100 !== 0 || anoInt % 400 === 0)) {
+        diasPorMes[2] = 29; // Ano bissexto
+      }
+      if (diaInt > diasPorMes[mesInt]) continue;
+
+      // Retorna no formato YYYY-MM-DD
+      return `${ano}-${mes}-${dia}`;
+    }
+  }
+
+  return null;
+}
+
+// Função para calcular idade a partir da data de nascimento
+function calcularIdade(dataNascimento) {
+  if (!dataNascimento) return null;
+  
+  try {
+    const hoje = new Date();
+    const nascimento = new Date(dataNascimento);
+    
+    if (isNaN(nascimento.getTime())) return null;
+    
+    let idade = hoje.getFullYear() - nascimento.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const mesNascimento = nascimento.getMonth();
+    
+    if (mesAtual < mesNascimento || (mesAtual === mesNascimento && hoje.getDate() < nascimento.getDate())) {
+      idade--;
+    }
+    
+    return idade > 0 ? idade : null;
+  } catch (error) {
+    return null;
+  }
 }
 
 async function processarAnexos(response) {
@@ -306,12 +432,26 @@ async function processarCandidatura(response) {
     const cpf = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'cpf');
     const telefone = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'telefone');
     const email = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'email');
+    
+    // Extrair data de nascimento
+    const dataNascimentoTexto = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'dataNascimento');
+    const dataNascimento = dataNascimentoTexto ? extrairDataNascimento(dataNascimentoTexto) : null;
+    const idade = dataNascimento ? calcularIdade(dataNascimento) : null;
 
     if (!dados_estruturados.pessoal) dados_estruturados.pessoal = {};
     dados_estruturados.pessoal.nome = nome;
     dados_estruturados.pessoal.cpf = cpf;
     dados_estruturados.pessoal.telefone = telefone;
     dados_estruturados.pessoal.email = email;
+    dados_estruturados.pessoal.data_nascimento = dataNascimento;
+    dados_estruturados.pessoal.idade = idade;
+
+    // Log para debug
+    if (dataNascimentoTexto) {
+      console.log(`   📅 Data de nascimento extraída: "${dataNascimentoTexto}" -> "${dataNascimento}" (Idade: ${idade})`);
+    } else {
+      console.log(`   ⚠️ Campo de data de nascimento não encontrado`);
+    }
 
     const { error: upsertError } = await supabase.from('candidaturas').upsert({
       response_id: response.response_id,
@@ -425,9 +565,11 @@ async function main() {
 main();
 
 module.exports = {
+  extrairDataNascimento,
+  calcularIdade,
   extrairCampoTextoPorId,
-  MAPA_CAMPOS,
   normalizeText,
+  MAPA_CAMPOS,
   sanitizeFilename,
   processarAnexos,
   fetchAllResponses,

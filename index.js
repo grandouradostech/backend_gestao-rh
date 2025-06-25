@@ -172,11 +172,24 @@ app.post('/typeform-webhook', async (req, res) => {
     const telefone = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'telefone');
     const email = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'email');
 
+    // Extrair data de nascimento e idade
+    const dataNascimentoTexto = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'dataNascimento');
+    const dataNascimento = dataNascimentoTexto ? require('./importar-candidaturas').extrairDataNascimento(dataNascimentoTexto) : null;
+    const idade = dataNascimento ? require('./importar-candidaturas').calcularIdade(dataNascimento) : null;
+
     if (!dados_estruturados.pessoal) dados_estruturados.pessoal = {};
     dados_estruturados.pessoal.nome = nome;
     dados_estruturados.pessoal.cpf = cpf;
     dados_estruturados.pessoal.telefone = telefone;
     dados_estruturados.pessoal.email = email;
+    dados_estruturados.pessoal.data_nascimento = dataNascimento;
+    dados_estruturados.pessoal.idade = idade;
+
+    if (dataNascimentoTexto) {
+      console.log(`[WEBHOOK] Data de nascimento extraída: "${dataNascimentoTexto}" -> "${dataNascimento}" (Idade: ${idade})`);
+    } else {
+      console.log(`[WEBHOOK] Campo de data de nascimento não encontrado`);
+    }
 
     // Buscar requisitos da vaga
     let vaga_nome = dados_estruturados?.profissional?.vaga || null;
