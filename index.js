@@ -904,9 +904,6 @@ app.post('/candidaturas/manual', async (req, res) => {
     const { data, error } = await supabase.from('candidaturas').insert({
       response_id: response_id,
       nome: nome,
-      email: email,
-      telefone: telefone || null,
-      cpf: cpf || null,
       status: status || 'Analisado por IA',
       dados_estruturados: dados_estruturados,
       raw_data: {
