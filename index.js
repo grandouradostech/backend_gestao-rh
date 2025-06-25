@@ -629,39 +629,51 @@ app.patch('/usuarios/atualizar', auth, async (req, res) => {
 // Upload de avatar
 app.post('/usuarios/upload-avatar', auth, async (req, res) => {
   try {
+    console.log('📸 Iniciando upload de avatar...');
+    
     // Verificar se há arquivo
     if (!req.files || !req.files.image) {
+      console.log('❌ Nenhuma imagem enviada');
       return res.status(400).json({ error: 'Nenhuma imagem enviada' });
     }
 
     const file = req.files.image;
     const userId = req.body.userId || req.user.id;
+    
+    console.log('👤 Usuário ID:', userId);
+    console.log('📁 Arquivo:', file.name, 'Tamanho:', file.size, 'Tipo:', file.mimetype);
 
     // Verificar se o usuário pode atualizar (próprio usuário ou gestor)
     if (req.user.id !== userId && req.user.role !== 'gestor') {
+      console.log('❌ Sem permissão para atualizar usuário');
       return res.status(403).json({ error: 'Sem permissão para atualizar este usuário' });
     }
 
     // Validar tipo de arquivo
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.mimetype)) {
+      console.log('❌ Tipo de arquivo não permitido:', file.mimetype);
       return res.status(400).json({ error: 'Tipo de arquivo não permitido. Use apenas JPEG, PNG, GIF ou WebP' });
     }
 
     // Validar tamanho (máximo 5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
+      console.log('❌ Arquivo muito grande:', file.size);
       return res.status(400).json({ error: 'A imagem deve ter no máximo 5MB' });
     }
 
     // Gerar nome único para o arquivo
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}-${Date.now()}.${fileExt}`;
+    console.log('📝 Nome do arquivo:', fileName);
 
     // Ler o arquivo temporário
     const fileBuffer = fs.readFileSync(file.tempFilePath);
+    console.log('📖 Arquivo lido, tamanho do buffer:', fileBuffer.length);
 
     // Upload para Supabase Storage
+    console.log('☁️ Fazendo upload para Supabase...');
     const { data, error } = await supabase.storage
       .from('avatares')
       .upload(fileName, fileBuffer, {
@@ -671,28 +683,41 @@ app.post('/usuarios/upload-avatar', auth, async (req, res) => {
       });
 
     if (error) {
-      console.error('Erro no upload para Supabase:', error);
+      console.error('❌ Erro no upload para Supabase:', error);
       return res.status(500).json({ error: 'Erro ao fazer upload da imagem' });
     }
 
+    console.log('✅ Upload para Supabase realizado com sucesso');
+
     // Limpar arquivo temporário
     fs.unlinkSync(file.tempFilePath);
+    console.log('🗑️ Arquivo temporário removido');
 
     // Gerar URL pública
     const { data: { publicUrl } } = supabase.storage
       .from('avatares')
       .getPublicUrl(fileName);
+    
+    console.log('🔗 URL pública gerada:', publicUrl);
 
     // Atualizar usuário no banco
-    const { error: updateError } = await supabase
+    console.log('💾 Atualizando usuário no banco...');
+    console.log('👤 ID do usuário:', userId);
+    console.log('🔗 URL da imagem:', publicUrl);
+    
+    const { data: updateData, error: updateError } = await supabase
       .from('usuarios_rh')
       .update({ imagem_url: publicUrl })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id, nome, email, imagem_url');
 
     if (updateError) {
-      console.error('Erro ao atualizar usuário:', updateError);
+      console.error('❌ Erro ao atualizar usuário:', updateError);
       return res.status(500).json({ error: 'Erro ao atualizar usuário' });
     }
+
+    console.log('✅ Usuário atualizado no banco com sucesso');
+    console.log('📊 Dados retornados:', updateData);
 
     res.json({ 
       success: true, 
@@ -701,7 +726,7 @@ app.post('/usuarios/upload-avatar', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao fazer upload de avatar:', error);
+    console.error('💥 Erro ao fazer upload de avatar:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
