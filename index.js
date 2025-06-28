@@ -306,34 +306,34 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       updateObj.reprovado_em = agora;
     }
     // Atualiza status e quem assumiu no Supabase
-    const { data, error } = await supabase
+    const { data: dataUpdate, error: errorUpdate } = await supabase
       .from('candidaturas')
       .update(updateObj)
       .eq('response_id', response_id)
       .select();
-    if (error || !data || !data[0]) {
-      console.error('Erro ao atualizar status:', error);
+    if (errorUpdate || !dataUpdate || !dataUpdate[0]) {
+      console.error('Erro ao atualizar status:', errorUpdate);
       return res.status(500).json({ error: 'Erro ao atualizar status' });
     }
-    const candidato = data[0];
+    const candidatoAtualizado = dataUpdate[0];
     // Busca nome e telefone
-    let nome = 'Candidato';
-    let telefone = null;
-    if (candidato.dados_estruturados && candidato.dados_estruturados.pessoal) {
-      nome = candidato.dados_estruturados.pessoal.nome || nome;
-      telefone = candidato.dados_estruturados.pessoal.telefone || null;
+    let nomeAtualizado = 'Candidato';
+    let telefoneAtualizado = null;
+    if (candidatoAtualizado.dados_estruturados && candidatoAtualizado.dados_estruturados.pessoal) {
+      nomeAtualizado = candidatoAtualizado.dados_estruturados.pessoal.nome || nomeAtualizado;
+      telefoneAtualizado = candidatoAtualizado.dados_estruturados.pessoal.telefone || null;
     }
     // Se reprovado, envia UltraMsg
     if (status && typeof status === 'string' && status.toLowerCase().includes('reprov')) {
-      if (telefone) {
-        telefone = telefone.replace(/[^\d+]/g, '');
-        if (!telefone.startsWith('+')) {
-          telefone = '+55' + telefone;
+      if (telefoneAtualizado) {
+        let tel = telefoneAtualizado.replace(/[^\d+]/g, '');
+        if (!tel.startsWith('+')) {
+          tel = '+55' + tel;
         }
-        const msg = `Olá, ${nome}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\n\nGente e Gestão.`;
+        const msg = `Olá, ${nomeAtualizado}! Tudo bem?\n\nAgradecemos por demonstrar interesse em fazer parte da nossa equipe.\nApós análise do seu perfil, não seguiremos com o seu processo no momento.\nDesejamos sucesso na sua jornada profissional!\n\nAtenciosamente,\n\nGente e Gestão.`;
         const dataMsg = qs.stringify({
           "token": "nz7n5zoux1sjduar",
-          "to": telefone,
+          "to": tel,
           "body": msg
         });
         const config = {
@@ -355,15 +355,15 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     }
     // Enviar mensagem de banco de talentos
     if (statusKey === 'banco de talentos') {
-      if (telefone) {
-        telefone = telefone.replace(/[^\d+]/g, '');
-        if (!telefone.startsWith('+')) {
-          telefone = '+55' + telefone;
+      if (telefoneAtualizado) {
+        let tel = telefoneAtualizado.replace(/[^\d+]/g, '');
+        if (!tel.startsWith('+')) {
+          tel = '+55' + tel;
         }
-        const msg = `BANCO DE TALENTOS\n\nOlá ${nome}! Tudo bem?\n\nAgradecemos por sua participação em nosso processo seletivo.\nGostaríamos de informar que seu currículo foi incluído em nosso banco de talentos. Caso surjam futuras oportunidades que estejam alinhadas ao seu perfil, entraremos em contato.\nDesejamos sucesso em sua trajetória profissional e esperamos poder contar com você em breve!\n\nAtenciosamente,\n\nGente e Gestão.`;
+        const msg = `BANCO DE TALENTOS\n\nOlá ${nomeAtualizado}! Tudo bem?\n\nAgradecemos por sua participação em nosso processo seletivo.\nGostaríamos de informar que seu currículo foi incluído em nosso banco de talentos. Caso surjam futuras oportunidades que estejam alinhadas ao seu perfil, entraremos em contato.\nDesejamos sucesso em sua trajetória profissional e esperamos poder contar com você em breve!\n\nAtenciosamente,\n\nGente e Gestão.`;
         const dataMsg = qs.stringify({
           "token": "nz7n5zoux1sjduar",
-          "to": telefone,
+          "to": tel,
           "body": msg
         });
         const config = {
@@ -385,17 +385,17 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     }
     // Enviar mensagem de entrevista se status for Entrevista
     if (statusKey === 'entrevista') {
-      if (telefone) {
-        telefone = telefone.replace(/[^\d+]/g, '');
-        if (!telefone.startsWith('+')) {
-          telefone = '+55' + telefone;
+      if (telefoneAtualizado) {
+        let tel = telefoneAtualizado.replace(/[^\d+]/g, '');
+        if (!tel.startsWith('+')) {
+          tel = '+55' + tel;
         }
         // Formatar data para mensagem (sem segundos)
-        let dataEntrevistaStr = candidato.data_entrevista ? new Date(candidato.data_entrevista).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'a definir';
-        const msg = `Olá, ${nome}. Tudo bem?\n\nSua entrevista ficou marcada para ${dataEntrevistaStr}.\n\nREGRAS PARA ACESSO NA AMBEV – GRAN DOURADOS:\n1. Deve-se apresentar documento de identificação com foto.\n2. Caso esteja utilizando um veículo, é possível estacionar no estacionamento externo ou na via lateral da rodovia.\n3. Todos os visitantes passarão por um breve treinamento de segurança sobre circulação interna.\n4. Não vir de blusa de time, chinelo.\n5. Vir de calça jeans e tênis ou botina.\n\nEndereço: Rodovia BR-163, km 268, sem número (Após a PRF).`;
+        let dataEntrevistaStr = candidatoAtualizado.data_entrevista ? new Date(candidatoAtualizado.data_entrevista).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'a definir';
+        const msg = `Olá, ${nomeAtualizado}. Tudo bem?\n\nSua entrevista ficou marcada para ${dataEntrevistaStr}.\n\nREGRAS PARA ACESSO NA AMBEV – GRAN DOURADOS:\n1. Deve-se apresentar documento de identificação com foto.\n2. Caso esteja utilizando um veículo, é possível estacionar no estacionamento externo ou na via lateral da rodovia.\n3. Todos os visitantes passarão por um breve treinamento de segurança sobre circulação interna.\n4. Não vir de blusa de time, chinelo.\n5. Vir de calça jeans e tênis ou botina.\n\nEndereço: Rodovia BR-163, km 268, sem número (Após a PRF).`;
         const dataMsg = qs.stringify({
           "token": "nz7n5zoux1sjduar",
-          "to": telefone,
+          "to": tel,
           "body": msg
         });
         const config = {
@@ -418,7 +418,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     // Enviar mensagem de provas se status for Provas
     if (statusKey === 'provas') {
       // Buscar vaga do candidato
-      let vaga = candidato.dados_estruturados?.profissional?.vaga || candidato.dados_completos?.profissional?.vaga || '';
+      let vaga = candidatoAtualizado.dados_estruturados?.profissional?.vaga || candidatoAtualizado.dados_completos?.profissional?.vaga || '';
       vaga = vaga.toLowerCase();
       // Regras para provas
       let provasLinks = [
@@ -435,8 +435,8 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       // Mensagem formal
       const msg = `Olá! Você avançou para a fase de provas do nosso processo seletivo. Para continuarmos com sua candidatura, precisamos que você responda as seguintes provas:\n\n${provasLinks.join('\n')}\n\nElas são essenciais para a continuidade do processo e não vão levar muito tempo. Contamos com sua participação!`;
       // Enviar via UltraMsg
-      if (telefone) {
-        let tel = telefone.replace(/[^\d+]/g, '');
+      if (telefoneAtualizado) {
+        let tel = telefoneAtualizado.replace(/[^\d+]/g, '');
         if (!tel.startsWith('+')) {
           tel = '+55' + tel;
         }
@@ -462,7 +462,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
         console.log('Telefone não encontrado para envio UltraMsg (provas)');
       }
     }
-    res.json({ success: true });
+    res.json({ success: true, data: candidatoAtualizado });
   } catch (err) {
     console.error('Erro PATCH status:', err);
     res.status(500).json({ error: 'Erro ao atualizar status' });
