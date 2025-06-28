@@ -305,6 +305,13 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     if (statusKey === 'reprovado' && !candidatoAtual.reprovado_em) {
       updateObj.reprovado_em = agora;
     }
+    // Atualiza historico_etapas
+    let historicoEtapas = Array.isArray(candidatoAtual.historico_etapas) ? [...candidatoAtual.historico_etapas] : [];
+    const etapaJaRegistrada = historicoEtapas.some(e => (e.etapa || '').toLowerCase().trim() === statusKey);
+    if (!etapaJaRegistrada) {
+      historicoEtapas.push({ etapa: status, data: agora });
+    }
+    updateObj.historico_etapas = historicoEtapas;
     // Atualiza status e quem assumiu no Supabase
     const { data: dataUpdate, error: errorUpdate } = await supabase
       .from('candidaturas')
