@@ -504,9 +504,10 @@ async function main() {
     }
 
     const ignorarIds = (analisados || []).map(c => c.response_id);
-    let novasCandidaturas = responses.filter(r => !ignorarIds.includes(r.response_id));
-    // Só processa a partir do 502º candidato
-    novasCandidaturas = novasCandidaturas.slice(501);
+    // Só processa a partir do 502º candidato da lista total
+    const responsesApartir502 = responses.slice(501);
+    // Agora filtra só os que ainda não foram analisados
+    let novasCandidaturas = responsesApartir502.filter(r => !ignorarIds.includes(r.response_id));
     console.log(`⏳ Processando ${novasCandidaturas.length} novas candidaturas...`);
     console.log(`📊 Detalhes:
     - Total de respostas: ${responses.length}

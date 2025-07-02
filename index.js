@@ -154,6 +154,28 @@ app.post('/typeform-webhook', async (req, res) => {
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
     
+    // --- NOVO: Só processa se for o 502º ou posterior ---
+    // Busca todas as respostas desse formulário
+    let totalRespostas = 0;
+    try {
+      const resTypeform = await fetch(`https://api.typeform.com/forms/${formId}/responses?page_size=1000`, {
+        headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
+      });
+      if (resTypeform.ok) {
+        const dataTypeform = await resTypeform.json();
+        const todasIds = (dataTypeform.items || []).map(item => item.response_id);
+        const idx = todasIds.indexOf(responseId);
+        totalRespostas = todasIds.length;
+        if (idx > -1 && idx < 501) {
+          console.log(`[WEBHOOK] Ignorando resposta ${responseId} (posição ${idx+1} < 502)`);
+          return res.status(200).json({ success: true, ignored: true, reason: 'Abaixo do 502º da lista' });
+        }
+      }
+    } catch (e) {
+      console.warn('[WEBHOOK] Não foi possível checar posição do candidato na lista Typeform:', e.message);
+    }
+    // --- FIM NOVO ---
+
     console.log(`[WEBHOOK] Processando resposta do formulário ${formId} (ID: ${responseId})`);
 
     // Processar anexos (currículo)
