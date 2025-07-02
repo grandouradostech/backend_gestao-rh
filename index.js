@@ -247,6 +247,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
       .select('*')
       .eq('response_id', response_id)
       .single();
+    console.log('[PATCH /candidaturas/:response_id/status] Candidato encontrado:', candidatoAtual, 'Erro:', errorBusca);
     if (errorBusca) {
       console.error('Erro ao buscar candidato:', errorBusca);
       return res.status(500).json({ error: 'Erro ao buscar candidato' });
@@ -314,14 +315,15 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     }
     updateObj.historico_etapas = historicoEtapas;
     // Atualiza status e quem assumiu no Supabase
+    console.log('[PATCH /candidaturas/:response_id/status] updateObj:', updateObj);
     const { data: dataUpdate, error: errorUpdate } = await supabase
       .from('candidaturas')
       .update(updateObj)
       .eq('response_id', response_id)
       .select();
     if (errorUpdate || !dataUpdate || !dataUpdate[0]) {
-      console.error('Erro ao atualizar status:', errorUpdate);
-      return res.status(500).json({ error: 'Erro ao atualizar status' });
+      console.error('Erro ao atualizar status:', errorUpdate, 'dataUpdate:', dataUpdate);
+      return res.status(500).json({ error: 'Erro ao atualizar status', details: errorUpdate });
     }
     const candidatoAtualizado = dataUpdate[0];
     // Busca nome e telefone
@@ -473,7 +475,7 @@ app.patch('/candidaturas/:response_id/status', async (req, res) => {
     res.json({ success: true, data: candidatoAtualizado });
   } catch (err) {
     console.error('Erro PATCH status:', err);
-    res.status(500).json({ error: 'Erro ao atualizar status' });
+    res.status(500).json({ error: 'Erro ao atualizar status', details: err.message });
   }
 });
 
