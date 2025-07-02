@@ -244,7 +244,7 @@ ${JSON.stringify({
 ${JSON.stringify(requisitosObrigatorios)}`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-3.5-turbo",
       messages: [
         { role: "system", content: "Você é um especialista em triagem de currículos para processos seletivos. Siga as instruções do prompt rigorosamente." },
         { role: "user", content: prompt }
