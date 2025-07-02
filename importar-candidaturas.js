@@ -35,21 +35,21 @@ const MAPA_CAMPOS = {
     cpf: 'kyDMKvIiREJN',
     telefone: 'ryREsjI6ocDM',
     email: '0H5FhjQdZsUU',
-    dataNascimento: 'YjlVPbYIjF5L'
+    dataNascimento: ['YjlVPbYIjF5L', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   },
   i6GB06nW: {
     nome: 'c0SRbHskERPD',
     cpf: '8vaBwiO7kELZ',
     telefone: 'lXkYZdgtJuCM',
     email: 'DRrZHCUp0EhV',
-    dataNascimento: 'ZfxImfwRovM8'
+    dataNascimento: ['ZfxImfwRovM8', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   },
   OejwZ32V: {
     nome: 'w0kqjkpQ8Oav',
     cpf: 'xWO9ZhqjMIsx',
     telefone: 'mraynQBpbAew',
     email: 'djlTJfSHbAA4',
-    dataNascimento: 'MZeKTR2jRuVF'
+    dataNascimento: ['MZeKTR2jRuVF', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   }
 };
 
@@ -71,13 +71,25 @@ function extrairCampoTextoPorId(formId, answers, mapaCampos, nomeCampo) {
   for (const idCampo of idsCampo) {
     // Primeiro tenta encontrar pelo ID do campo
     resposta = answers.find((a) => a?.field?.id === idCampo);
-    
     // Se não encontrar, tenta encontrar pelo ref do campo
     if (!resposta) {
       resposta = answers.find((a) => a?.field?.ref === idCampo);
     }
-
     if (resposta) break;
+  }
+
+  // Fallback: se não achou, tenta encontrar qualquer campo do tipo 'text' que pareça uma data
+  if (!resposta && nomeCampo === 'dataNascimento') {
+    resposta = answers.find(a => {
+      if (a?.type === 'text' && typeof a.value === 'string') {
+        // Padrão: DDMMYYYY, DD/MM/YYYY, YYYY-MM-DD, etc
+        return /^(\d{2}[\/\-]?\d{2}[\/\-]?\d{4}|\d{4}[\/\-]?\d{2}[\/\-]?\d{2})$/.test(a.value.trim());
+      }
+      return false;
+    });
+    if (resposta) {
+      console.log('   ⚠️ Campo de data de nascimento encontrado por fallback:', resposta);
+    }
   }
 
   if (!resposta) {
@@ -96,6 +108,7 @@ function extrairCampoTextoPorId(formId, answers, mapaCampos, nomeCampo) {
                 resposta.email || 
                 resposta.phone_number || 
                 resposta.number ||
+                resposta.value ||
                 (resposta.choice && resposta.choice.label) ||
                 null;
 
