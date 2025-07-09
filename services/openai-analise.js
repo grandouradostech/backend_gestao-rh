@@ -142,7 +142,18 @@ async function estruturarDados(response, formId) {
     const rawJSON = completion.choices[0].message.content;
     const validJSON = rawJSON.replace(/\\\"/g, '"').replace(/'/g, '"').replace(/},\s*}/g, '}}');
 
-    return JSON.parse(validJSON);
+    const result = JSON.parse(validJSON);
+    
+    // Adicionar informações de tokens da estruturação
+    result.tokens_estruturacao = {
+      prompt_tokens: completion.usage?.prompt_tokens || 0,
+      completion_tokens: completion.usage?.completion_tokens || 0,
+      total_tokens: completion.usage?.total_tokens || 0,
+      model: 'gpt-4o',
+      timestamp: new Date().toISOString()
+    };
+
+    return result;
   } catch (error) {
     console.error('📄 Erro na estruturação dos dados:', error.message);
     return null;
@@ -164,6 +175,14 @@ async function obterNome(response, formId, dadosEstruturados) {
 
 async function analisarCandidatura(response, caminhoCurriculo, requisitosVaga = null) {
   let rawAnalysis;
+  let tokensInfo = {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+    model: 'gpt-4o',
+    timestamp: new Date().toISOString()
+  };
+  
   try {
     const textoCurriculo = caminhoCurriculo 
       ? await processarCurriculo(response.response_id)
@@ -254,6 +273,11 @@ ${JSON.stringify(requisitosObrigatorios)}`;
       response_format: { type: "json_object" }
     });
 
+    // Capturar informações de tokens
+    tokensInfo.prompt_tokens = completion.usage?.prompt_tokens || 0;
+    tokensInfo.completion_tokens = completion.usage?.completion_tokens || 0;
+    tokensInfo.total_tokens = completion.usage?.total_tokens || 0;
+
     rawAnalysis = completion.choices[0].message.content;
     const validAnalysis = rawAnalysis
       .replace(/'/g, '"')
@@ -261,16 +285,25 @@ ${JSON.stringify(requisitosObrigatorios)}`;
       .replace(/},\s*}/g, '}}');
 
     try {
-      return JSON.parse(validAnalysis);
+      const analysisResult = JSON.parse(validAnalysis);
+      return {
+        ...analysisResult,
+        tokens_gastos: tokensInfo
+      };
     } catch (error) {
       try {
         const repaired = jsonrepair(validAnalysis);
-        return JSON.parse(repaired);
+        const analysisResult = JSON.parse(repaired);
+        return {
+          ...analysisResult,
+          tokens_gastos: tokensInfo
+        };
       } catch (err2) {
         return {
           error: "Erro na análise",
           details: error.message,
-          raw: rawAnalysis
+          raw: rawAnalysis,
+          tokens_gastos: tokensInfo
         };
       }
     }

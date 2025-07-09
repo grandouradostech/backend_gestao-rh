@@ -441,6 +441,16 @@ async function processarCandidatura(response) {
 
     const analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo, requisitosVaga);
 
+    // Preparar informações de tokens para salvar
+    const tokensGastos = {
+      analise: analise.tokens_gastos || null,
+      estruturacao: dados_estruturados?.tokens_estruturacao || null,
+      total_tokens: (analise.tokens_gastos?.total_tokens || 0) + (dados_estruturados?.tokens_estruturacao?.total_tokens || 0),
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`   💰 Tokens gastos - Análise: ${analise.tokens_gastos?.total_tokens || 0}, Estruturação: ${dados_estruturados?.tokens_estruturacao?.total_tokens || 0}, Total: ${tokensGastos.total_tokens}`);
+
     const nome = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'nome') || 'Não identificado';
     const cpf = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'cpf');
     const telefone = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'telefone');
@@ -471,6 +481,7 @@ async function processarCandidatura(response) {
       raw_data: response,
       dados_estruturados,
       analise_ia: analise,
+      tokens_gastos: tokensGastos,
       curriculo_path: caminhoCurriculo,
       tem_curriculo: !!caminhoCurriculo,
       updated_at: new Date().toISOString(),

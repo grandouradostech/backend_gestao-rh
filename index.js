@@ -231,12 +231,22 @@ app.post('/typeform-webhook', async (req, res) => {
     console.log('[WEBHOOK] Analisando candidatura...');
     const analise = await analisarCandidatura({ ...response, prompt_custom: prompt }, caminhoCurriculo, requisitosVaga);
 
+    // Preparar informações de tokens para salvar
+    const tokensGastos = {
+      analise: analise.tokens_gastos || null,
+      estruturacao: dados_estruturados?.tokens_estruturacao || null,
+      total_tokens: (analise.tokens_gastos?.total_tokens || 0) + (dados_estruturados?.tokens_estruturacao?.total_tokens || 0),
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`[WEBHOOK] Tokens gastos - Análise: ${analise.tokens_gastos?.total_tokens || 0}, Estruturação: ${dados_estruturados?.tokens_estruturacao?.total_tokens || 0}, Total: ${tokensGastos.total_tokens}`);
     console.log('[WEBHOOK] Salvando no banco...');
     const { data: upsertData, error: upsertError } = await supabase.from('candidaturas').upsert({
       response_id: responseId,
       raw_data: response,
       dados_estruturados,
       analise_ia: analise,
+      tokens_gastos: tokensGastos,
       curriculo_path: caminhoCurriculo,
       tem_curriculo: !!caminhoCurriculo,
       updated_at: new Date().toISOString(),
@@ -1180,9 +1190,20 @@ app.post('/reanalisar/:response_id', async (req, res) => {
     // Chamar a função de análise IA
     const analise = await analisarCandidatura(response, caminhoCurriculo, requisitosVaga);
 
+    // Preparar informações de tokens para salvar
+    const tokensGastos = {
+      analise: analise.tokens_gastos || null,
+      estruturacao: null, // Reanálise não faz estruturação
+      total_tokens: analise.tokens_gastos?.total_tokens || 0,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log(`[REANALISE] Tokens gastos - Análise: ${analise.tokens_gastos?.total_tokens || 0}, Total: ${tokensGastos.total_tokens}`);
+
     // Atualizar o candidato no banco
     const { error: updateError } = await supabase.from('candidaturas').update({
       analise_ia: analise,
+      tokens_gastos: tokensGastos,
       updated_at: new Date().toISOString()
     }).eq('response_id', response_id);
 
@@ -1324,6 +1345,71 @@ app.patch('/candidaturas/:response_id/status-com-motivo', async (req, res) => {
     res.json({ success: true, data: data[0] });
   } catch (error) {
     console.error('Erro ao atualizar candidato:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Endpoint para consultar estatísticas de tokens gastos
+app.get('/candidaturas/tokens-estatisticas', auth, onlyGestor, async (req, res) => {
+  try {
+    const { data: candidaturas, error } = await supabase
+      .from('candidaturas')
+      .select('tokens_gastos, nome, response_id, created_at')
+      .not('tokens_gastos', 'is', null);
+
+    if (error) {
+      console.error('Erro ao buscar estatísticas de tokens:', error);
+      return res.status(500).json({ error: 'Erro ao buscar estatísticas' });
+    }
+
+    const estatisticas = {
+      total_candidaturas: candidaturas.length,
+      total_tokens: 0,
+      media_tokens_por_candidatura: 0,
+      candidaturas_mais_caras: [],
+      candidaturas_por_periodo: {}
+    };
+
+    candidaturas.forEach(candidatura => {
+      const totalTokens = candidatura.tokens_gastos?.total_tokens || 0;
+      estatisticas.total_tokens += totalTokens;
+
+      // Adicionar às candidaturas mais caras
+      estatisticas.candidaturas_mais_caras.push({
+        nome: candidatura.nome,
+        response_id: candidatura.response_id,
+        total_tokens: totalTokens,
+        created_at: candidatura.created_at
+      });
+
+      // Agrupar por período (mês/ano)
+      const data = new Date(candidatura.created_at);
+      const periodo = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}`;
+      if (!estatisticas.candidaturas_por_periodo[periodo]) {
+        estatisticas.candidaturas_por_periodo[periodo] = {
+          total_tokens: 0,
+          quantidade: 0
+        };
+      }
+      estatisticas.candidaturas_por_periodo[periodo].total_tokens += totalTokens;
+      estatisticas.candidaturas_por_periodo[periodo].quantidade += 1;
+    });
+
+    // Calcular média
+    if (estatisticas.total_candidaturas > 0) {
+      estatisticas.media_tokens_por_candidatura = Math.round(estatisticas.total_tokens / estatisticas.total_candidaturas);
+    }
+
+    // Ordenar candidaturas mais caras
+    estatisticas.candidaturas_mais_caras.sort((a, b) => b.total_tokens - a.total_tokens);
+    estatisticas.candidaturas_mais_caras = estatisticas.candidaturas_mais_caras.slice(0, 10);
+
+    // Calcular custo estimado (assumindo $0.01 por 1K tokens)
+    estatisticas.custo_estimado_usd = (estatisticas.total_tokens * 0.01) / 1000;
+
+    res.json(estatisticas);
+  } catch (error) {
+    console.error('Erro ao calcular estatísticas de tokens:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
