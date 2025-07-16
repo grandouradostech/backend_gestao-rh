@@ -552,6 +552,22 @@ async function main() {
 
       for (const response of batch) {
         try {
+          // Checagem de duplicidade de CPF antes de processar
+          const cpfNovo = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'cpf');
+          let existeCpf = false;
+          if (cpfNovo) {
+            const { data: candidatosCpf, error: erroCpf } = await supabase
+              .from('candidaturas')
+              .select('id')
+              .eq('dados_estruturados->pessoal->>cpf', cpfNovo);
+            if (!erroCpf && candidatosCpf && candidatosCpf.length > 0) {
+              existeCpf = true;
+            }
+          }
+          if (existeCpf) {
+            console.log(`⚠️ Candidato com CPF ${cpfNovo} já existe no sistema. Pulando response_id ${response.response_id}`);
+            continue;
+          }
           const candidatura = await processarCandidatura(response);
           if (candidatura) {
             processadas++;
