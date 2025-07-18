@@ -442,18 +442,7 @@ app.post('/webhook-score-prova', async (req, res) => {
   }
 });
 
-// Health check para Render
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Backend Gestão RH funcionando',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      webhook_provas: '/webhook-score-prova',
-      webhook_principal: '/typeform-webhook'
-    }
-  });
-});
+
 
 // Após definição do app e do middleware de autenticação
 setupUsuariosRoutes(app, auth);
@@ -461,6 +450,4 @@ setupUsuariosRoutes(app, auth);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Health check disponível em: http://localhost:${PORT}/`);
-  console.log(`Webhook de provas: http://localhost:${PORT}/webhook-score-prova`);
 }); 

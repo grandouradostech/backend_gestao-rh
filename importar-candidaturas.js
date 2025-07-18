@@ -31,24 +31,24 @@ const IDS_CURRICULO = [
 
 const MAPA_CAMPOS = {
   ynFUyrAc: {
-    nome: '6VkDMDJph5Jc',
-    cpf: 'kyDMKvIiREJN',
-    telefone: 'ryREsjI6ocDM',
-    email: '0H5FhjQdZsUU',
+    nome: ['6VkDMDJph5Jc', 'oq4YGUe70Wk6'], // novo id
+    cpf: ['kyDMKvIiREJN', 'ZfxImfwRovM8'], // novo id
+    telefone: ['ryREsjI6ocDM', 'YSBd6MMq285s'], // novo id
+    email: ['0H5FhjQdZsUU', '7Ug3CCMc1sbO'], // novo id
     dataNascimento: ['YjlVPbYIjF5L', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   },
   i6GB06nW: {
-    nome: 'c0SRbHskERPD',
-    cpf: '8vaBwiO7kELZ',
-    telefone: 'lXkYZdgtJuCM',
-    email: 'DRrZHCUp0EhV',
+    nome: ['c0SRbHskERPD', 'oq4YGUe70Wk6'], // novo id
+    cpf: ['8vaBwiO7kELZ', 'ZfxImfwRovM8'], // novo id
+    telefone: ['lXkYZdgtJuCM', 'YSBd6MMq285s'], // novo id
+    email: ['DRrZHCUp0EhV', '7Ug3CCMc1sbO'], // novo id
     dataNascimento: ['ZfxImfwRovM8', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   },
   OejwZ32V: {
-    nome: 'w0kqjkpQ8Oav',
-    cpf: 'xWO9ZhqjMIsx',
-    telefone: 'mraynQBpbAew',
-    email: 'djlTJfSHbAA4',
+    nome: ['w0kqjkpQ8Oav', 'oq4YGUe70Wk6'], // novo id
+    cpf: ['xWO9ZhqjMIsx', 'ZfxImfwRovM8'], // novo id
+    telefone: ['mraynQBpbAew', 'YSBd6MMq285s'], // novo id
+    email: ['djlTJfSHbAA4', '7Ug3CCMc1sbO'], // novo id
     dataNascimento: ['MZeKTR2jRuVF', 'f7YAciExO7du', '04129866-6b88-478a-9a60-83f3157e5788']
   }
 };
