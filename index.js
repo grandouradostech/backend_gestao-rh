@@ -221,15 +221,24 @@ app.post('/typeform-webhook', async (req, res) => {
     const telefone = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'telefone');
     const email = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'email');
 
-    // Checagem de duplicidade de CPF
+    // Checagem de duplicidade de CPF (agora permite recadastro após 6 meses)
     if (cpf) {
       const { data: candidatosCpf, error: erroCpf } = await supabase
         .from('candidaturas')
-        .select('id')
-        .eq('dados_estruturados->pessoal->>cpf', cpf);
+        .select('id, updated_at, created_at')
+        .eq('dados_estruturados->pessoal->>cpf', cpf)
+        .order('updated_at', { ascending: false });
       if (!erroCpf && candidatosCpf && candidatosCpf.length > 0) {
-        console.log(`[WEBHOOK] ⚠️ Candidato com CPF ${cpf} já existe no sistema. Pulando response_id ${responseId}`);
-        return res.status(200).json({ success: true, ignored: true, reason: 'CPF já existe' });
+        // Pega a data mais recente (updated_at ou created_at)
+        const datas = candidatosCpf.map(c => new Date(c.updated_at || c.created_at));
+        const dataMaisRecente = datas.reduce((a, b) => (a > b ? a : b));
+        const agora = new Date();
+        const diffDias = (agora - dataMaisRecente) / (1000 * 60 * 60 * 24);
+        if (diffDias < 180) {
+          console.log(`[WEBHOOK] ⚠️ Candidato com CPF ${cpf} já existe no sistema (última candidatura há ${Math.round(diffDias)} dias). Pulando response_id ${responseId}`);
+          return res.status(200).json({ success: true, ignored: true, reason: 'CPF já existe (menos de 6 meses)' });
+        }
+        // Se passou de 6 meses, permite recadastro normalmente
       }
     }
 
