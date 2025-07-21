@@ -127,11 +127,10 @@ async function main() {
 
     console.log(`Candidato encontrado por ${buscaPor}: ${candidato.nome} (id: ${candidato.id})`);
 
-    // Atualiza score_prova e status
-    const novoStatus = String(score);
+    // Atualiza apenas o score_prova, mantém o status atual
     const { error: updateError } = await supabase
       .from('candidaturas')
-      .update({ score_prova: score, status: novoStatus })
+      .update({ score_prova: score })
       .eq('id', candidato.id);
 
     if (updateError) {

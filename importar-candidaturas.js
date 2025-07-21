@@ -139,102 +139,36 @@ function normalizeText(text) {
     .trim();
 }
 
-// Função para extrair e padronizar data de nascimento
-function extrairDataNascimento(texto) {
-  if (!texto || typeof texto !== 'string') return null;
-  
-  // Remove espaços extras e normaliza
-  let data = texto.trim().toLowerCase();
-  
-  // Mapeamento de meses em português
-  const meses = {
-    'janeiro': '01', 'jan': '01',
-    'fevereiro': '02', 'fev': '02',
-    'março': '03', 'mar': '03', 'marco': '03',
-    'abril': '04', 'abr': '04',
-    'maio': '05', 'mai': '05',
-    'junho': '06', 'jun': '06',
-    'julho': '07', 'jul': '07',
-    'agosto': '08', 'ago': '08',
-    'setembro': '09', 'set': '09',
-    'outubro': '10', 'out': '10',
-    'novembro': '11', 'nov': '11',
-    'dezembro': '12', 'dez': '12'
-  };
-
-  // Padrões de data para extração
-  const padroes = [
-    // DD/MM/YYYY ou DD-MM-YYYY
-    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/,
-    // DD.MM.YYYY
-    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/,
-    // DD MM YYYY
-    /^(\d{1,2})\s+(\d{1,2})\s+(\d{4})$/,
-    // DDMMYYYY (sem separadores)
-    /^(\d{2})(\d{2})(\d{4})$/,
-    // DD de Mês de YYYY (português, aceita acentos)
-    /^(\d{1,2})\s+de\s+([\wçãõáéíóúâêîôûàèìòùäëïöüÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÄËÏÖÜ]+)\s+de\s+(\d{4})$/,
-    // DD Mês YYYY (português, aceita acentos)
-    /^(\d{1,2})\s+([\wçãõáéíóúâêîôûàèìòùäëïöüÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÄËÏÖÜ]+)\s+(\d{4})$/,
-    // YYYY-MM-DD (formato ISO)
-    /^(\d{4})-(\d{1,2})-(\d{1,2})$/
-  ];
-
-  // Tenta cada padrão
-  for (let i = 0; i < padroes.length; i++) {
-    const match = data.match(padroes[i]);
-    if (match) {
-      let dia, mes, ano;
-      
-      if (i === 4 || i === 5) {
-        // Padrões com meses em português
-        dia = match[1].padStart(2, '0');
-        const mesNome = match[2];
-        // Normaliza o nome do mês para tratar caracteres especiais
-        const mesNormalizado = mesNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        mes = meses[mesNome] || meses[mesNormalizado];
-        ano = match[3];
-      } else if (i === 6) {
-        // Formato ISO (YYYY-MM-DD)
-        ano = match[1];
-        mes = match[2].padStart(2, '0');
-        dia = match[3].padStart(2, '0');
-      } else {
-        // Outros formatos
-        dia = match[1].padStart(2, '0');
-        mes = match[2].padStart(2, '0');
-        ano = match[3];
-      }
-
-      // Validações básicas
-      if (!mes || !meses[mes.toLowerCase()]) {
-        // Se não encontrou o mês em português, tenta como número
-        if (parseInt(mes) < 1 || parseInt(mes) > 12) continue;
-      } else {
-        mes = meses[mes.toLowerCase()];
-      }
-
-      const diaInt = parseInt(dia);
-      const mesInt = parseInt(mes);
-      const anoInt = parseInt(ano);
-
-      // Validações de data
-      if (diaInt < 1 || diaInt > 31) continue;
-      if (mesInt < 1 || mesInt > 12) continue;
-      if (anoInt < 1900 || anoInt > new Date().getFullYear()) continue;
-
-      // Validações específicas por mês
-      const diasPorMes = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      if (anoInt % 4 === 0 && (anoInt % 100 !== 0 || anoInt % 400 === 0)) {
-        diasPorMes[2] = 29; // Ano bissexto
-      }
-      if (diaInt > diasPorMes[mesInt]) continue;
-
-      // Retorna no formato YYYY-MM-DD
-      return `${ano}-${mes}-${dia}`;
+// Função robusta para parsear datas de nascimento em múltiplos formatos
+function extrairDataNascimento(valor) {
+  if (!valor) return null;
+  valor = valor.trim();
+  // DD/MM/YYYY ou D/M/YYYY
+  let m = valor.match(/^([0-9]{1,2})\/([0-9]{1,2})\/([0-9]{4})$/);
+  if (m) {
+    const [_, d, mth, y] = m;
+    // Se dia > 12, provavelmente é formato brasileiro
+    if (parseInt(d, 10) > 12) {
+      return `${y}-${mth.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
+    // Se mês > 12, provavelmente é formato americano invertido
+    if (parseInt(mth, 10) > 12) {
+      return `${y}-${d.padStart(2, '0')}-${mth.padStart(2, '0')}`;
+    }
+    // Se ambos <= 12, pode ser ambíguo, mas prioriza brasileiro
+    return `${y}-${mth.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
-
+  // YYYY-MM-DD
+  m = valor.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/);
+  if (m) {
+    return valor;
+  }
+  // YYYY/MM/DD
+  m = valor.match(/^([0-9]{4})\/([0-9]{2})\/([0-9]{2})$/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  // Se não reconheceu, retorna null
   return null;
 }
 

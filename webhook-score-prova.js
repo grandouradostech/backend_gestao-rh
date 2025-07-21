@@ -158,7 +158,7 @@ app.post('/webhook-score-prova', async (req, res) => {
 
     console.log(`Candidato encontrado por ${buscaPor}: ${candidato.nome} (id: ${candidato.id})`);
 
-    // Atualiza scores_provas (JSONB) e mantém status 'Provas'
+    // Atualiza apenas scores_provas (JSONB), mantém o status atual
     // Chave da prova será o formId
     const provaKey = formId;
     // Busca o objeto atual de scores (ou inicia vazio)
@@ -171,7 +171,7 @@ app.post('/webhook-score-prova', async (req, res) => {
     scoresProvas[provaKey] = score;
     const { error: updateError } = await supabase
       .from('candidaturas')
-      .update({ scores_provas: scoresProvas, status: 'Provas' })
+      .update({ scores_provas: scoresProvas })
       .eq('id', candidato.id);
 
     if (updateError) {
