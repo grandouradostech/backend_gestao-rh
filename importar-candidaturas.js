@@ -347,6 +347,24 @@ async function processarCandidatura(response) {
     const caminhoCurriculo = await processarAnexos(response);
     const dados_estruturados = await estruturarDados(response);
 
+    // Buscar definição do formulário para criar histórico legível
+    let historicoRespostas = null;
+    try {
+      const formDefResponse = await fetch(`https://api.typeform.com/forms/${response.form_id}`, {
+        headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
+      });
+      
+      if (formDefResponse.ok) {
+        const formDefinition = await formDefResponse.json();
+        if (response.answers && formDefinition.fields) {
+          historicoRespostas = criarHistoricoLegivel(response.answers, formDefinition.fields);
+          console.log(`   📋 Histórico de respostas criado para ${response.response_id}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`   ⚠️ Não foi possível criar histórico para ${response.response_id}:`, e.message);
+    }
+
     if (!dados_estruturados || typeof dados_estruturados !== 'object') {
       console.warn(`⚠️ Estruturação inválida para ${response.response_id}, pulando...`);
       return false;
@@ -420,7 +438,8 @@ async function processarCandidatura(response) {
       tem_curriculo: !!caminhoCurriculo,
       updated_at: new Date().toISOString(),
       status: response.status || 'Analisado por IA',
-      nome
+      nome,
+      historico_respostas: historicoRespostas || null
     }, { onConflict: 'response_id' });
 
     if (upsertError) {
@@ -552,6 +571,54 @@ async function main() {
   }
 }
 
+// Função para criar histórico legível das respostas (mesma função do index.js)
+function criarHistoricoLegivel(answers, fields) {
+  const historico = {};
+  const fieldMap = {};
+  
+  // Criar mapa de fields por ID
+  fields.forEach(field => {
+    fieldMap[field.id] = field.title || field.ref || `Campo ${field.type}`;
+  });
+  
+  // Processar cada resposta
+  answers.forEach(answer => {
+    const fieldId = answer.field?.id;
+    const fieldTitle = fieldMap[fieldId] || `Campo ${fieldId}`;
+    
+    let valorResposta = 'Sem resposta';
+    
+    // Extrair valor baseado no tipo de resposta
+    if (answer.text) {
+      valorResposta = answer.text;
+    } else if (answer.email) {
+      valorResposta = answer.email;
+    } else if (answer.number !== undefined) {
+      valorResposta = answer.number.toString();
+    } else if (answer.boolean !== undefined) {
+      valorResposta = answer.boolean ? 'Sim' : 'Não';
+    } else if (answer.choice) {
+      valorResposta = answer.choice.label || answer.choice;
+    } else if (answer.choices) {
+      valorResposta = Array.isArray(answer.choices.labels) 
+        ? answer.choices.labels.join(', ') 
+        : answer.choices;
+    } else if (answer.date) {
+      valorResposta = new Date(answer.date).toLocaleDateString('pt-BR');
+    } else if (answer.phone_number) {
+      valorResposta = answer.phone_number;
+    } else if (answer.url) {
+      valorResposta = answer.url;
+    } else if (answer.file_url) {
+      valorResposta = 'Arquivo anexado';
+    }
+    
+    historico[fieldTitle] = valorResposta;
+  });
+  
+  return historico;
+}
+
 main();
 
 module.exports = {
@@ -564,5 +631,6 @@ module.exports = {
   processarAnexos,
   fetchAllResponses,
   processarCandidatura,
-  main
+  main,
+  criarHistoricoLegivel
 };

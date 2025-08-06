@@ -166,6 +166,54 @@ function nomesParecidos(nomeA, nomeB) {
   return minLen > 0 && (iguais / minLen) >= 0.8;
 }
 
+// Função para criar histórico legível das respostas
+function criarHistoricoLegivel(answers, fields) {
+  const historico = {};
+  const fieldMap = {};
+  
+  // Criar mapa de fields por ID
+  fields.forEach(field => {
+    fieldMap[field.id] = field.title || field.ref || `Campo ${field.type}`;
+  });
+  
+  // Processar cada resposta
+  answers.forEach(answer => {
+    const fieldId = answer.field?.id;
+    const fieldTitle = fieldMap[fieldId] || `Campo ${fieldId}`;
+    
+    let valorResposta = 'Sem resposta';
+    
+    // Extrair valor baseado no tipo de resposta
+    if (answer.text) {
+      valorResposta = answer.text;
+    } else if (answer.email) {
+      valorResposta = answer.email;
+    } else if (answer.number !== undefined) {
+      valorResposta = answer.number.toString();
+    } else if (answer.boolean !== undefined) {
+      valorResposta = answer.boolean ? 'Sim' : 'Não';
+    } else if (answer.choice) {
+      valorResposta = answer.choice.label || answer.choice;
+    } else if (answer.choices) {
+      valorResposta = Array.isArray(answer.choices.labels) 
+        ? answer.choices.labels.join(', ') 
+        : answer.choices;
+    } else if (answer.date) {
+      valorResposta = new Date(answer.date).toLocaleDateString('pt-BR');
+    } else if (answer.phone_number) {
+      valorResposta = answer.phone_number;
+    } else if (answer.url) {
+      valorResposta = answer.url;
+    } else if (answer.file_url) {
+      valorResposta = 'Arquivo anexado';
+    }
+    
+    historico[fieldTitle] = valorResposta;
+  });
+  
+  return historico;
+}
+
 // Rota para receber webhook do Typeform (multi-formulário, análise IA completa)
 app.post('/typeform-webhook', async (req, res) => {
   try {
@@ -180,11 +228,19 @@ app.post('/typeform-webhook', async (req, res) => {
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
     
-    // --- NOVO: Só processa candidatos com menos de 7 dias ---
+    // --- NOVO: Só processa candidatos com menos de 7 dias E busca definição do formulário ---
+    let formDefinition = null;
     try {
+      // Buscar respostas para verificar data
       const resTypeform = await fetch(`https://api.typeform.com/forms/${formId}/responses?page_size=1000`, {
         headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
       });
+      
+      // Buscar definição do formulário para ter os nomes das perguntas
+      const formDefResponse = await fetch(`https://api.typeform.com/forms/${formId}`, {
+        headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
+      });
+      
       if (resTypeform.ok) {
         const dataTypeform = await resTypeform.json();
         const itemAtual = dataTypeform.items.find(item => item.response_id === responseId);
@@ -205,12 +261,25 @@ app.post('/typeform-webhook', async (req, res) => {
           console.warn(`[WEBHOOK] Não foi possível encontrar data de submissão para ${responseId}`);
         }
       }
+      
+      // Processar definição do formulário se disponível
+      if (formDefResponse.ok) {
+        formDefinition = await formDefResponse.json();
+        console.log(`[WEBHOOK] Definição do formulário ${formId} carregada com ${formDefinition.fields?.length || 0} campos`);
+      }
     } catch (e) {
-      console.warn('[WEBHOOK] Não foi possível checar data do candidato na API Typeform:', e.message);
+      console.warn('[WEBHOOK] Não foi possível checar dados do candidato na API Typeform:', e.message);
     }
     // --- FIM NOVO ---
 
     console.log(`[WEBHOOK] Processando resposta do formulário ${formId} (ID: ${responseId})`);
+
+    // Criar histórico legível das respostas se temos a definição do formulário
+    let historicoRespostas = null;
+    if (formDefinition && response.answers) {
+      historicoRespostas = criarHistoricoLegivel(response.answers, formDefinition.fields);
+      console.log(`[WEBHOOK] Histórico de respostas criado:`, historicoRespostas);
+    }
 
     // Processar anexos (currículo)
     const caminhoCurriculo = await processarAnexos(response, responseId);
@@ -263,6 +332,12 @@ app.post('/typeform-webhook', async (req, res) => {
     dados_estruturados.pessoal.data_nascimento = dataNascimento;
     dados_estruturados.pessoal.idade = idade;
 
+    // Adicionar histórico legível das respostas se disponível
+    if (historicoRespostas) {
+      dados_estruturados.historico_respostas = historicoRespostas;
+      console.log(`[WEBHOOK] Histórico de respostas adicionado aos dados estruturados`);
+    }
+
     if (dataNascimentoTexto) {
       console.log(`[WEBHOOK] Data de nascimento extraída: "${dataNascimentoTexto}" -> "${dataNascimento}" (Idade: ${idade})`);
     } else {
@@ -306,7 +381,8 @@ app.post('/typeform-webhook', async (req, res) => {
       tem_curriculo: !!caminhoCurriculo,
       updated_at: new Date().toISOString(),
       status: response.status || 'Analisado por IA',
-      nome
+      nome,
+      historico_respostas: historicoRespostas || null
     }, { onConflict: 'response_id' });
 
     if (upsertError) {
