@@ -292,6 +292,7 @@ ${JSON.stringify(requisitosObrigatorios)}`;
       };
     } catch (error) {
       try {
+        // Primeira tentativa: usar jsonrepair
         const repaired = jsonrepair(validAnalysis);
         const analysisResult = JSON.parse(repaired);
         return {
@@ -299,12 +300,37 @@ ${JSON.stringify(requisitosObrigatorios)}`;
           tokens_gastos: tokensInfo
         };
       } catch (err2) {
-        return {
-          error: "Erro na análise",
-          details: error.message,
-          raw: rawAnalysis,
-          tokens_gastos: tokensInfo
-        };
+        try {
+          // Segunda tentativa: limpeza manual mais agressiva
+          let cleanedAnalysis = rawAnalysis
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, ' ')
+            .replace(/\\t/g, ' ')
+            .replace(/\\r/g, ' ')
+            .replace(/,\s*}/g, '}')
+            .replace(/,\s*]/g, ']')
+            .replace(/}\s*,\s*}/g, '}}')
+            .replace(/]\s*,\s*]/g, ']]');
+          
+          // Tentar encontrar o JSON válido dentro do texto
+          const jsonMatch = cleanedAnalysis.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const analysisResult = JSON.parse(jsonMatch[0]);
+            return {
+              ...analysisResult,
+              tokens_gastos: tokensInfo
+            };
+          }
+          
+          throw new Error('Não foi possível extrair JSON válido');
+        } catch (err3) {
+          return {
+            error: "Erro na análise",
+            details: `Erro de parsing JSON: ${error.message}. Tentativas de reparo falharam.`,
+            raw: rawAnalysis,
+            tokens_gastos: tokensInfo
+          };
+        }
       }
     }
   } catch (error) {

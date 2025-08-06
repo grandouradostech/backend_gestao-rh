@@ -180,25 +180,33 @@ app.post('/typeform-webhook', async (req, res) => {
     // Garante que response_id nunca é null
     const responseId = response.response_id || response.token || ('id-teste-' + Date.now());
     
-    // --- NOVO: Só processa se for o 502º ou posterior ---
-    // Busca todas as respostas desse formulário
-    let totalRespostas = 0;
+    // --- NOVO: Só processa candidatos com menos de 7 dias ---
     try {
       const resTypeform = await fetch(`https://api.typeform.com/forms/${formId}/responses?page_size=1000`, {
         headers: { Authorization: `Bearer ${process.env.TYPEFORM_TOKEN}` }
       });
       if (resTypeform.ok) {
         const dataTypeform = await resTypeform.json();
-        const todasIds = (dataTypeform.items || []).map(item => item.response_id);
-        const idx = todasIds.indexOf(responseId);
-        totalRespostas = todasIds.length;
-        if (idx > -1 && idx < 501) {
-          console.log(`[WEBHOOK] Ignorando resposta ${responseId} (posição ${idx+1} < 502)`);
-          return res.status(200).json({ success: true, ignored: true, reason: 'Abaixo do 502º da lista' });
+        const itemAtual = dataTypeform.items.find(item => item.response_id === responseId);
+        
+        if (itemAtual && itemAtual.submitted_at) {
+          const dataSubmissao = new Date(itemAtual.submitted_at);
+          const agora = new Date();
+          const diffDias = (agora - dataSubmissao) / (1000 * 60 * 60 * 24);
+          
+          // Só processa candidatos com menos de 7 dias
+          if (diffDias > 7) {
+            console.log(`[WEBHOOK] Ignorando resposta antiga ${responseId} (submetida há ${Math.round(diffDias)} dias)`);
+            return res.status(200).json({ success: true, ignored: true, reason: `Resposta antiga: ${Math.round(diffDias)} dias` });
+          }
+          
+          console.log(`[WEBHOOK] Candidato recente ${responseId} (submetido há ${Math.round(diffDias * 24)} horas)`);
+        } else {
+          console.warn(`[WEBHOOK] Não foi possível encontrar data de submissão para ${responseId}`);
         }
       }
     } catch (e) {
-      console.warn('[WEBHOOK] Não foi possível checar posição do candidato na lista Typeform:', e.message);
+      console.warn('[WEBHOOK] Não foi possível checar data do candidato na API Typeform:', e.message);
     }
     // --- FIM NOVO ---
 

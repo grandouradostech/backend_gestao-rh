@@ -462,16 +462,29 @@ async function main() {
     }
 
     const ignorarIds = (analisados || []).map(c => c.response_id);
-    // Só processa a partir do 502º candidato da lista total
-    const responsesApartir502 = responses.slice(501);
+    
+    // Filtrar apenas candidatos recentes (menos de 7 dias)
+    const agora = new Date();
+    const responsesRecentes = responses.filter(r => {
+      if (!r.raw || !r.raw.submitted_at) {
+        console.warn(`⚠️ Resposta sem data de submissão: ${r.response_id}`);
+        return false; // Ignora se não tem data
+      }
+      
+      const dataSubmissao = new Date(r.raw.submitted_at);
+      const diffDias = (agora - dataSubmissao) / (1000 * 60 * 60 * 24);
+      
+      return diffDias <= 7; // Só candidatos com menos de 7 dias
+    });
+    
     // Agora filtra só os que ainda não foram analisados
-    let novasCandidaturas = responsesApartir502.filter(r => !ignorarIds.includes(r.response_id));
+    let novasCandidaturas = responsesRecentes.filter(r => !ignorarIds.includes(r.response_id));
     console.log(`⏳ Processando ${novasCandidaturas.length} novas candidaturas...`);
     console.log(`📊 Detalhes:
     - Total de respostas: ${responses.length}
+    - Candidatos recentes (≤7 dias): ${responsesRecentes.length}
     - Já analisadas: ${ignorarIds.length}
-    - Novas para processar: ${novasCandidaturas.length}
-    - IDs ignorados: ${ignorarIds.length}`);
+    - Novas para processar: ${novasCandidaturas.length}`);
 
     let processadas = 0;
     let erros = 0;
