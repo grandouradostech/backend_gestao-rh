@@ -298,24 +298,45 @@ app.post('/typeform-webhook', async (req, res) => {
     const telefone = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'telefone');
     const email = extrairCampoTextoPorId(formId, response.answers, MAPA_CAMPOS, 'email');
 
-    // Checagem de duplicidade de CPF (agora permite recadastro após 6 meses)
+    // Descobrir a vaga atual para a checagem de duplicidade (sem custo extra)
+    let vagaParaDuplicidade = dados_estruturados?.profissional?.vaga || null;
+    if (!vagaParaDuplicidade && Array.isArray(response.answers)) {
+      const respostaVaga = response.answers.find(ans =>
+        ans?.field?.ref === 'a347f0fa-431c-4f86-8ffe-3239e8f1b800' ||
+        ans?.field?.id === 'JNuaMlqdlJkT'
+      );
+      vagaParaDuplicidade = respostaVaga?.choice?.label?.trim() || null;
+    }
+
+    // Checagem de duplicidade por CPF + mesma vaga (permite outras vagas; recadastro após 6 meses)
     if (cpf) {
       const { data: candidatosCpf, error: erroCpf } = await supabase
         .from('candidaturas')
-        .select('id, updated_at, created_at')
+        .select('id, updated_at, created_at, dados_estruturados')
         .eq('dados_estruturados->pessoal->>cpf', cpf)
         .order('updated_at', { ascending: false });
       if (!erroCpf && candidatosCpf && candidatosCpf.length > 0) {
-        // Pega a data mais recente (updated_at ou created_at)
-        const datas = candidatosCpf.map(c => new Date(c.updated_at || c.created_at));
-        const dataMaisRecente = datas.reduce((a, b) => (a > b ? a : b));
-        const agora = new Date();
-        const diffDias = (agora - dataMaisRecente) / (1000 * 60 * 60 * 24);
-        if (diffDias < 180) {
-          console.log(`[WEBHOOK] ⚠️ Candidato com CPF ${cpf} já existe no sistema (última candidatura há ${Math.round(diffDias)} dias). Pulando response_id ${responseId}`);
-          return res.status(200).json({ success: true, ignored: true, reason: 'CPF já existe (menos de 6 meses)' });
+        let candidatosMesmaVaga = candidatosCpf;
+        if (vagaParaDuplicidade) {
+          const alvoNormalizado = normalizeText(vagaParaDuplicidade);
+          candidatosMesmaVaga = candidatosCpf.filter(c => {
+            const vagaBanco = c.dados_estruturados?.profissional?.vaga || '';
+            return normalizeText(vagaBanco) === alvoNormalizado;
+          });
         }
-        // Se passou de 6 meses, permite recadastro normalmente
+
+        if (candidatosMesmaVaga.length > 0) {
+          // Pega a data mais recente (updated_at ou created_at) apenas entre registros da mesma vaga
+          const datas = candidatosMesmaVaga.map(c => new Date(c.updated_at || c.created_at));
+          const dataMaisRecente = datas.reduce((a, b) => (a > b ? a : b));
+          const agora = new Date();
+          const diffDias = (agora - dataMaisRecente) / (1000 * 60 * 60 * 24);
+          if (diffDias < 180) {
+            console.log(`[WEBHOOK] ⚠️ CPF ${cpf} já possui candidatura para a mesma vaga nos últimos ${Math.round(diffDias)} dias. Pulando response_id ${responseId}`);
+            return res.status(200).json({ success: true, ignored: true, reason: 'CPF já possui candidatura recente para a mesma vaga (menos de 6 meses)' });
+          }
+        }
+        // Se não há registro da mesma vaga ou passou de 6 meses, permite recadastro normalmente
       }
     }
 

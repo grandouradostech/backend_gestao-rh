@@ -516,24 +516,49 @@ async function main() {
       console.log(`\n📦 Processando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(novasCandidaturas.length/BATCH_SIZE)}`);
       console.log(`   Índice atual: ${i}, Total disponível: ${novasCandidaturas.length}`);
 
-      for (const response of batch) {
+        for (const response of batch) {
         try {
-          // Checagem de duplicidade de CPF antes de processar
+          // Checagem de duplicidade por CPF + mesma vaga (permite outras vagas; recadastro após 6 meses)
           const cpfNovo = extrairCampoTextoPorId(response.form_id, response.answers, MAPA_CAMPOS, 'cpf');
-          let existeCpf = false;
+          let pularPorDuplicidade = false;
           if (cpfNovo) {
+            // Tentar identificar a vaga do response
+            let vagaDoResponse = null;
+            try {
+              const dadosTemp = await estruturarDados(response);
+              vagaDoResponse = dadosTemp?.profissional?.vaga || null;
+              if (!vagaDoResponse && Array.isArray(response.answers)) {
+                const respostaVaga = response.answers.find(ans =>
+                  ans?.field?.ref === 'a347f0fa-431c-4f86-8ffe-3239e8f1b800' ||
+                  ans?.field?.id === 'JNuaMlqdlJkT'
+                );
+                vagaDoResponse = respostaVaga?.choice?.label?.trim() || null;
+              }
+            } catch {}
+
             const { data: candidatosCpf, error: erroCpf } = await supabase
               .from('candidaturas')
-              .select('id')
+              .select('id, created_at, updated_at, dados_estruturados')
               .eq('dados_estruturados->pessoal->>cpf', cpfNovo);
             if (!erroCpf && candidatosCpf && candidatosCpf.length > 0) {
-              existeCpf = true;
+              let mesmaVaga = candidatosCpf;
+              if (vagaDoResponse) {
+                const alvo = normalizeText(vagaDoResponse);
+                mesmaVaga = candidatosCpf.filter(c => normalizeText(c.dados_estruturados?.profissional?.vaga || '') === alvo);
+              }
+              if (mesmaVaga.length > 0) {
+                const datas = mesmaVaga.map(c => new Date(c.updated_at || c.created_at));
+                const dataMaisRecente = datas.reduce((a, b) => (a > b ? a : b));
+                const agora = new Date();
+                const diffDias = (agora - dataMaisRecente) / (1000 * 60 * 60 * 24);
+                if (diffDias < 180) {
+                  console.log(`⚠️ CPF ${cpfNovo} já possui candidatura para a mesma vaga nos últimos ${Math.round(diffDias)} dias. Pulando response_id ${response.response_id}`);
+                  pularPorDuplicidade = true;
+                }
+              }
             }
           }
-          if (existeCpf) {
-            console.log(`⚠️ Candidato com CPF ${cpfNovo} já existe no sistema. Pulando response_id ${response.response_id}`);
-            continue;
-          }
+          if (pularPorDuplicidade) continue;
           const candidatura = await processarCandidatura(response);
           if (candidatura) {
             processadas++;
